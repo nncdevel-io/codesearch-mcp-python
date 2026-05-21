@@ -625,10 +625,10 @@ codesearch://repo/{id}
   "status": {
     "repository": "main-app",
     "state": "ready",
-    "last_outcome": "success",
     "last_sync_at": "2026-05-20T01:23:45Z",
-    "last_commit": "deadbeef…",
-    "last_error": null
+    "last_outcome": "success",
+    "last_error": null,
+    "last_commit": "deadbeef…"
   }
 }
 ```
