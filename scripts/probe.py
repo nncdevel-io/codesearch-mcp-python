@@ -94,16 +94,27 @@ def _parse_kv(pairs: list[str]) -> dict[str, Any]:
 async def _run_session(session: Any, args: argparse.Namespace) -> int:
     await session.initialize()
     tools = await session.list_tools()
-    print("Tools advertised:")
-    for tool in tools.tools:
-        first_line = (tool.description or "").splitlines()[0] if tool.description else ""
-        print(f"  - {tool.name}: {first_line[:80]}")
     if args.list:
+        print("Tools advertised:")
+        for tool in tools.tools:
+            desc = (tool.description or "").rstrip()
+            if not desc:
+                print(f"  - {tool.name}")
+                continue
+            lines = desc.splitlines()
+            print(f"  - {tool.name}: {lines[0]}")
+            for cont in lines[1:]:
+                print(f"      {cont}")
         return 0
 
     matching = next((t for t in tools.tools if t.name == args.tool), None)
     if matching is None:
-        print(f"\nERROR: tool {args.tool!r} not advertised by server", file=sys.stderr)
+        advertised = ", ".join(t.name for t in tools.tools)
+        print(
+            f"ERROR: tool {args.tool!r} not advertised by server. "
+            f"Advertised: {advertised}",
+            file=sys.stderr,
+        )
         return 2
 
     arguments = _parse_kv(args.arg)

@@ -1,0 +1,15 @@
+# Server runtime config for `codesearch-mcp serve`.
+# Auto-discovered at ./config/server.toml when present. Override with
+# --config PATH or CODE_SEARCH_CONFIG_PATH. CLI flags (--transport / --host /
+# --port / --enable-scheduler / --no-enable-scheduler) always win over the
+# values in this file.
+#
+# Repository / secret paths live separately (--repos / --secrets /
+# CODE_SEARCH_REPOS_PATH / CODE_SEARCH_SECRETS_PATH) because they share a
+# different lifecycle: this file describes the deployment endpoint, not the
+# repository catalog.
+
+transport = "http"          # "stdio" | "http"
+host = "127.0.0.1"
+port = 8000
+enable_scheduler = false    # true to enable the in-process periodic sync

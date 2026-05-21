@@ -8,10 +8,13 @@ import logging as stdlib_logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from codesearch_mcp.config.models import RepositoryConfig, Settings
 from codesearch_mcp.giturl import Hosting
 from codesearch_mcp.logging import (
     JsonFormatter,
+    TextFormatter,
     configure_logging,
     get_logger,
     log_event,
@@ -145,3 +148,55 @@ def test_json_formatter_records_timestamp_in_utc() -> None:
     ts = parsed["ts"]
     assert ts.endswith("Z")
     datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def test_text_formatter_is_human_readable_and_redacts() -> None:
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.WARNING,
+        pathname=__file__,
+        lineno=1,
+        msg="server_start",
+        args=(),
+        exc_info=None,
+    )
+    record.ctx = {  # type: ignore[attr-defined]
+        "event": "server_start",
+        "remote": "https://x-access-token:abc@github.com/o/r.git",
+        "ok": True,
+    }
+    line = TextFormatter().format(record)
+    # No JSON braces around the whole record; flat human form.
+    assert not line.startswith("{")
+    assert "WARNING" in line
+    assert "server_start" in line
+    # Secrets are redacted in the text rendering too.
+    assert "abc" not in line
+    assert "***" in line
+    # The reserved "event" key is not duplicated as a kv pair.
+    assert "event=server_start" not in line
+
+
+def test_configure_logging_picks_text_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    # Reset any pre-existing handlers so configure_logging actually wires one.
+    logger = get_logger()
+    logger.handlers.clear()
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+    configure_logging()
+    handler = logger.handlers[0]
+    assert isinstance(handler.formatter, TextFormatter)
+    logger.handlers.clear()
+
+
+def test_configure_logging_picks_json_when_not_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    logger = get_logger()
+    logger.handlers.clear()
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: False)
+    configure_logging()
+    handler = logger.handlers[0]
+    assert isinstance(handler.formatter, JsonFormatter)
+    logger.handlers.clear()

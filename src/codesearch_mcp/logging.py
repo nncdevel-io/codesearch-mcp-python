@@ -60,16 +60,55 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+class TextFormatter(logging.Formatter):
+    """Human-readable formatter for interactive use (TTY).
+
+    Pipelines / file outputs continue to use :class:`JsonFormatter` so the
+    structured-logging requirement (requirements §6) is preserved for log
+    aggregators. Secret redaction runs in both formatters.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        ts = datetime.now(UTC).strftime("%H:%M:%S")
+        msg = redact(record.getMessage())
+        line = f"{ts} {record.levelname:<5} {msg}"
+        extra = getattr(record, "ctx", None)
+        if isinstance(extra, dict):
+            redacted = _redact_value(extra)
+            kv = " ".join(f"{k}={_format_value(v)}" for k, v in redacted.items() if k != "event")
+            if kv:
+                line = f"{line}  {kv}"
+        if record.exc_info:
+            line = f"{line}\n{redact(self.formatException(record.exc_info))}"
+        return line
+
+
+def _format_value(value: Any) -> str:
+    """Render a context value compactly for the text formatter."""
+    if isinstance(value, str) and (" " in value or "=" in value):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
+
+
 def get_logger() -> logging.Logger:
     return logging.getLogger(_LOGGER_NAME)
 
 
 def configure_logging(level: str | int | None = None) -> None:
+    """Wire the stderr handler. Pick text formatter on a TTY, JSON otherwise.
+
+    Pipelines, files, and container runtimes (no TTY) keep getting JSON to
+    satisfy the structured-logging requirement (requirements §6). Interactive
+    shells get the human-readable :class:`TextFormatter`.
+    """
     logger = get_logger()
     if logger.handlers:
         return
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
+    formatter = TextFormatter() if handler.stream.isatty() else JsonFormatter()
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
     resolved = level or os.environ.get("CODE_SEARCH_LOG_LEVEL", "INFO")
     logger.setLevel(resolved if isinstance(resolved, int) else resolved.upper())

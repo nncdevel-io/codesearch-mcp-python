@@ -1,5 +1,19 @@
 # Code Search MCP Server — example repository config.
-# Set CODE_SEARCH_REPOS_PATH to point at this file (or pass --repos PATH).
+# Auto-discovered at ./config/repos.toml. Override with --repos PATH or
+# CODE_SEARCH_REPOS_PATH.
+#
+# Optional top-level fields below the comment block are file-level defaults
+# for paths that share the catalog's lifecycle. CLI args / env vars still
+# override these:
+#
+#   workspace_root: clone destination root (CLI --workspace-root / env
+#                   CODE_SEARCH_WORKSPACE_ROOT > this field > "./workspaces")
+#   secrets:        path to secrets.toml (CLI --secrets / env
+#                   CODE_SEARCH_SECRETS_PATH > this field > auto-discover
+#                   ./config/secrets.toml > none)
+
+# workspace_root = "/var/lib/codesearch/workspaces"
+# secrets = "/etc/codesearch/secrets.toml"
 
 # The `description` field is the LLM's primary signal for choosing which
 # repository to search. See `docs/installation.md` "リポジトリ description

@@ -18,6 +18,45 @@ class AuthType(StrEnum):
     NONE = "none"
 
 
+class Transport(StrEnum):
+    STDIO = "stdio"
+    HTTP = "http"
+
+
+class ServerConfig(BaseModel):
+    """Runtime settings for the `serve` subcommand.
+
+    Loaded from ``config/server.toml`` (auto-discovered) and overlaid by CLI
+    flags. Repository / secret paths live elsewhere (see :class:`Settings`)
+    because they share a different lifecycle.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    transport: Transport = Transport.STDIO
+    host: str = Field(default="127.0.0.1", min_length=1)
+    port: int = Field(default=8000, ge=1, le=65535)
+    enable_scheduler: bool = False
+
+    def overlay_cli(
+        self,
+        *,
+        transport: str | Transport | None,
+        host: str | None,
+        port: int | None,
+        enable_scheduler: bool | None,
+    ) -> ServerConfig:
+        """Return a copy with non-None CLI values applied as overrides."""
+        return ServerConfig(
+            transport=transport if transport is not None else self.transport,
+            host=host if host is not None else self.host,
+            port=port if port is not None else self.port,
+            enable_scheduler=(
+                enable_scheduler if enable_scheduler is not None else self.enable_scheduler
+            ),
+        )
+
+
 class RepositoryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,6 +110,22 @@ class SecretConfig(BaseModel):
         return self
 
 
+class RepositoriesFile(BaseModel):
+    """Top-level shape of ``config/repos.toml``.
+
+    Carries the repository catalog plus *optional* paths that share the
+    catalog's lifecycle (where clones live, where the matching secrets file
+    lives). These optional paths are file-level defaults; CLI args and env
+    vars override them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_root: str | None = None
+    secrets: str | None = None
+    repository: list[RepositoryConfig] = Field(default_factory=list)
+
+
 class Settings(BaseModel):
     """Aggregate of repo + secret config plus workspace layout."""
 
@@ -87,10 +142,17 @@ class Settings(BaseModel):
             if r.id in seen:
                 raise ValueError(f"duplicate repository id: {r.id}")
             seen.add(r.id)
-        for sid in self.secrets:
-            if sid not in seen:
-                raise ValueError(f"secrets entry references unknown repository id: {sid}")
         return self
+
+    def orphan_secret_ids(self) -> list[str]:
+        """Secret entries whose key does not match any repository id.
+
+        Not fatal — secrets are optional (repos without an entry default to
+        ``auth_type=none``), so an orphan is usually a stale leftover. The
+        loader logs these as a warning at startup.
+        """
+        ids = {r.id for r in self.repositories}
+        return [sid for sid in self.secrets if sid not in ids]
 
     def secret_for(self, repo_id: str) -> SecretConfig:
         return self.secrets.get(repo_id, SecretConfig(auth_type=AuthType.NONE))

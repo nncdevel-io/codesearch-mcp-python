@@ -17,6 +17,7 @@
 | 並行モデル | 全体 async。外部コマンドは `asyncio.create_subprocess_exec` | シェル非経由でインジェクション耐性、並列走査の利得 |
 | Git 同期 | リクエストパスから完全分離。デプロイ非依存 | 利用者選択。要件 5.1/5.2 と整合 |
 | スケジューラ | 素の asyncio ループ。任意コンポーネント (ON/OFF) | 固定間隔更新に APScheduler 等は YAGNI |
+| Tool description の粒度 | `tools/list` で配信する description は 600〜1,000 chars / ツールの厚めの記述を採用 (Tips / 隣接ツールへの cross-reference / エラー条件まで含む)。LLM のツール選択精度を優先 | 前提: ホスト LLM が 100K+ コンテキストクラス (`docs/operations.md` 「ホスト LLM のコンテキスト窓」)。回帰: `tests/test_tool_descriptions.py` |
 
 ## 2. Git 同期アーキテクチャ (デプロイ非依存)
 

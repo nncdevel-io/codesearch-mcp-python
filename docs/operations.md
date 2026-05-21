@@ -19,6 +19,54 @@ Git 同期 (取得 / `fetch + reset --hard`) はリクエストパスから完�
 リクエスト時の git pull は仕様上禁止される (要件書 5.1 の p95 2 秒を
 侵害する)。
 
+### 外部 sync 後の状態反映 (SIGHUP)
+
+ワンショット CLI (`codesearch-sync`) と常駐 `codesearch-mcp serve` は
+別プロセスで動く。サーバ側の `RepositoryManager` は起動時にワーク
+スペースの `.git` 存在を見て `ready` / `uninitialized` を決定し、その後の
+状態更新は同一プロセス内の sync (内蔵スケジューラ / リクエスト経由)
+でしか起きない。
+
+このギャップを埋めるため SIGHUP ベースの通知経路を実装している:
+
+1. `codesearch-mcp serve` は起動時に `<workspace_root>/.serve.pid` を
+   atomically に書き出す (終了時に削除)
+2. `codesearch-sync` は完了時に PID file を読み、ベストエフォートで
+   `SIGHUP` を送る
+3. `serve` は SIGHUP を受けて `RepositoryManager.refresh_states_from_disk()`
+   を呼び、各リポジトリの `.git` 存在を再評価して `uninitialized → ready`
+   への昇格だけ行う (downgrade はしない: 一時的な FS のブレで READY が
+   外れないように、状態降格は実際の sync 試行 `mark_failure` でのみ)
+
+つまり通常運用では **再起動不要**で外部 sync の結果が即時反映される。
+PID file が無い・プロセスが既に死んでいる・Windows などで `SIGHUP` が
+無い場合は silently no-op (`codesearch-sync` 自身の終了コードには影響
+しない)。
+
+#### refresh で更新される項目
+
+`RepositoryManager.refresh_states_from_disk` は `.git` の中身を直接読んで
+以下を再評価する (サブプロセス不使用):
+
+| フィールド | 取得元 |
+| --- | --- |
+| `state` | `.git/` ディレクトリの存在 (昇格のみ。downgrade はしない) |
+| `last_commit` | `.git/HEAD` を辿って解決 (loose ref / packed-refs 両対応) |
+| `last_sync_at` | `.git/FETCH_HEAD` の mtime (無ければ `.git/HEAD` の mtime にフォールバック) |
+
+一方、`last_outcome` / `last_error` は workspace の状態だけからは導出
+できないため SIGHUP 経由では更新されない (前回 in-process で実行された
+`mark_success` / `mark_failure` の値が残る)。これらを正確に追跡したい
+場合は `--enable-scheduler` で内蔵スケジューラを使う。
+
+#### その他の注意
+
+- PID file の owner と sync を実行するユーザが異なる (異なる OS ユーザで
+  serve / sync を回す) と SIGHUP が `EPERM` で落ち、通知が届かない。同じ
+  OS ユーザで運用するのが前提
+- 再起動でも同等の状態反映は可能 (`SIGTERM` → 再 `serve`) だが、接続中の
+  クライアントを切ってしまうため SIGHUP 経路を推奨
+
 ### cron 例
 
 15 分ごとに全リポジトリを同期する設定の例:
@@ -132,6 +180,34 @@ MCP サーバインスタンスを分割する。50 リポ × 各 200 文字で�
 
 これを超える場合は複数インスタンスに分割する。1 インスタンスあたりの
 同時実行ツール呼び出しは 16 件まで、キュー含めた応答 30 秒で `TIMEOUT`。
+
+## ホスト LLM のコンテキスト窓
+
+本サーバーは **コンテキスト窓 100K tokens 以上の LLM** をホストとして
+想定する (Claude 3.5+ / GPT-4 系 / Gemini 1.5+ 相当)。各ツールの
+`description` は LLM のツール選択精度を上げるため意図的に厚く書いて
+あり、5 ツール合計でおよそ 4,500 chars ≈ 1,200 tokens を消費する。
+
+- `tools/list` は session 開始時に 1 回だけ配信され、ホスト側で
+  キャッシュされる扱い (ターン毎の負担ではない)
+- 100K+ クラスのホストではコンテキスト全体の 0.5% 未満で実質誤差
+- 厚い description により、ツール使い分け (内容検索 / 名前検索 /
+  ディレクトリ俯瞰)、`repository` 引数の有効値の取得方法、
+  各種パラメータ選択ガイド、エラー条件などを LLM 側に渡せる
+
+### 軽量 LLM (8K〜16K コンテキスト級) を使う場合の注意
+
+軽量 LLM をホストにする運用は本サーバーの想定外。そのままでは
+ツールカタログがコンテキストの相当割合を占めうるため、利用者側で
+以下のいずれかを選択する:
+
+- 各ツール description の Tips セクションと cross-reference を削って
+  200〜300 chars / ツール程度に圧縮する (`docs/usage-for-llm.md` が
+  正本、サーバ実装にはそこから反映している。`tests/test_tool_descriptions.py`
+  も併せて更新)
+- 公開ツールを絞ったフォークを運用する (例: `read_file` を除外して
+  ホスト側のファイル読み機能で代替)
+- そもそも 100K+ クラスのホストに切り替える
 
 ## トランスポートと公開範囲
 
