@@ -32,3 +32,7 @@ asyncio
 cronjob
 nri
 codemod
+PYSEC
+pyjwt
+jlowin
+ASGI

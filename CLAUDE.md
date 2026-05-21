@@ -48,7 +48,7 @@ manager (see "Harness rules" below).
 - Full quality gate (the same one CI runs): `make verify`
 - Individual gates: `make lint` / `make format-check` / `make types`
   (Pyrefly) / `make imports` (import-linter) / `make test` (pytest +
-  coverage 80%) / `make audit` (pip-audit) / `make md` (markdownlint-cli2)
+  coverage 100%) / `make audit` (pip-audit) / `make md` (markdownlint-cli2)
 - Auto-fix formatting: `make format`
 - One test: `uv run pytest tests/path/test_file.py::test_name -v`
 - Skip-fast mode without coverage: `make test-fast`
@@ -92,9 +92,11 @@ the failure modes Python invites.
   import outer layers, and `tools/*` modules cannot import each other. If you
   need to break a contract, change the contract explicitly — do not work
   around it.
-- **Coverage floor is 80%.** Adding a module without tests will lower the
-  total under the floor. Either add tests or move the code into an already
-  excluded path (`__main__.py`).
+- **Coverage floor is 100%** (library-grade). Adding a module without tests
+  will lower the total under the floor. Either add tests, mark genuinely
+  unreachable defensive branches with `# pragma: no cover` (with a
+  justifying comment), or move the code into an already excluded path
+  (`__main__.py`).
 - **Secrets never on disk in the repo.** `secrets.toml`, `.env`, and SSH key
   paths are denied by `.claude/settings.json`. The configured `redact()`
   patterns in `codesearch_mcp.logging` strip tokens from logs.

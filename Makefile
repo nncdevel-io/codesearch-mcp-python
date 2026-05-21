@@ -41,7 +41,10 @@ coverage: ## Print coverage report only (no re-run)
 	$(UV) run coverage report
 
 audit: ## pip-audit dependency vulnerability scan
-	$(UV) run pip-audit --skip-editable
+	# PYSEC-2025-183 (CVE-2025-45768): disputed by PyJWT maintainers — key length
+	# is the application's responsibility, no upstream fix exists, and pyjwt is
+	# a transitive dep via mcp (not used directly by this project).
+	$(UV) run pip-audit --skip-editable --ignore-vuln PYSEC-2025-183
 
 md: ## Markdown lint
 	markdownlint-cli2 README.md CHANGELOG.md docs

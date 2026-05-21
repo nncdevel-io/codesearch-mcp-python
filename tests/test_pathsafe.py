@@ -31,6 +31,19 @@ def test_normalize_strips_redundant_components() -> None:
     assert normalize_relative("src/./main") == "src/main"
 
 
+def test_normalize_returns_empty_for_trailing_dot_slash() -> None:
+    # ``./`` is not caught by the early ``path == "."`` branch — it only normalizes
+    # to ``"."`` after ``posixpath.normpath`` runs, exercising the second
+    # ``normalized == "."`` early return.
+    assert normalize_relative("./") == ""
+
+
+def test_normalize_returns_empty_for_collapsing_traversal() -> None:
+    # ``foo/..`` and ``a/b/../..`` both collapse to ``"."`` via ``normpath``.
+    assert normalize_relative("foo/..") == ""
+    assert normalize_relative("a/b/../..") == ""
+
+
 def test_normalize_rejects_backslash_separator() -> None:
     with pytest.raises(ToolError) as ei:
         normalize_relative("src\\main")

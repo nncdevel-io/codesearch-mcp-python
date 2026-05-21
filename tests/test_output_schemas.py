@@ -30,6 +30,7 @@ from codesearch_mcp.tool_outputs import (
     ListTreeOutput,
     ReadFileOutput,
     SearchCodeOutput,
+    output_schema_for,
 )
 
 
@@ -145,3 +146,17 @@ def test_tool_output_models_match_registered_tools() -> None:
         ListRepositoriesOutput,
     ):
         model.model_json_schema()
+
+
+def test_output_schema_for_returns_schema_for_known_tool() -> None:
+    """``output_schema_for`` returns the JSON Schema dict for a registered
+    tool name (line 183)."""
+    schema = output_schema_for("read_file")
+    assert isinstance(schema, dict)
+    assert "title" in schema
+
+
+def test_output_schema_for_returns_none_for_unknown_tool() -> None:
+    """An unrecognized tool name yields ``None`` rather than raising
+    (lines 181-182)."""
+    assert output_schema_for("nonexistent_tool") is None

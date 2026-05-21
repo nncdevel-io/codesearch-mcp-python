@@ -10,6 +10,26 @@ MCP ホスト (Claude Code / Desktop など) を介さずに、起動済みの
 
 ### 前提
 
+サーバ起動と初回 sync を済ませた状態で `probe.py` を叩く前提です。
+最短手順:
+
+```bash
+# 1. 設定: 同梱の example を gitignore 対象の実体にコピー
+cp config/repos.toml.example config/repos.toml
+
+# 2. 初回 clone (workspace を populate)
+uv run codesearch-sync
+
+# 3. サーバを HTTP で起動 (別ターミナル)
+uv run codesearch-mcp serve --transport http
+```
+
+詳細 (クライアント側設定、認証つき HTTP、stdio 直結など) は
+[README.md](../README.md#-サーバー起動-streamable-http) と
+[`docs/installation.md`](../docs/installation.md) を参照。
+
+確認事項:
+
 - `codesearch-mcp serve --transport http` が `http://127.0.0.1:8000/mcp/`
   で起動している (別ターミナル)
 - 検索対象リポジトリが clone 済み (`uv run codesearch-sync` を 1 回以上実行)

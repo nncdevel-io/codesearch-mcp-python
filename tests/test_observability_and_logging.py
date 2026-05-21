@@ -200,3 +200,132 @@ def test_configure_logging_picks_json_when_not_tty(monkeypatch: pytest.MonkeyPat
     handler = logger.handlers[0]
     assert isinstance(handler.formatter, JsonFormatter)
     logger.handlers.clear()
+
+
+def test_redact_recurses_into_lists() -> None:
+    """``_redact_value`` recurses into list elements (line 41).
+
+    Reach it via a context whose value is a list containing a credentialed URL."""
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="x",
+        args=(),
+        exc_info=None,
+    )
+    record.ctx = {  # type: ignore[attr-defined]
+        "remotes": ["https://x-access-token:abc@host/r.git", "plain"],
+    }
+    parsed = json.loads(JsonFormatter().format(record))
+    assert parsed["ctx"]["remotes"][0].endswith("@host/r.git")
+    assert "abc" not in parsed["ctx"]["remotes"][0]
+    assert "***" in parsed["ctx"]["remotes"][0]
+    assert parsed["ctx"]["remotes"][1] == "plain"
+
+
+def _record_with_exc() -> stdlib_logging.LogRecord:
+    try:
+        raise RuntimeError("boom https://x-access-token:abc@h/r")
+    except RuntimeError:
+        import sys
+
+        return stdlib_logging.LogRecord(
+            name="t",
+            level=stdlib_logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="failed",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+
+def test_json_formatter_includes_redacted_exception() -> None:
+    """``JsonFormatter`` attaches an ``exc`` field built from the formatted
+    traceback, with secrets redacted (line 59)."""
+    parsed = json.loads(JsonFormatter().format(_record_with_exc()))
+    assert "exc" in parsed
+    assert "abc" not in parsed["exc"]
+    assert "***" in parsed["exc"]
+
+
+def test_text_formatter_appends_redacted_exception() -> None:
+    """``TextFormatter`` appends the formatted exception, also redacted
+    (line 82)."""
+    line = TextFormatter().format(_record_with_exc())
+    assert "abc" not in line
+    assert "***" in line
+    assert "Traceback" in line
+
+
+def test_format_value_quotes_string_with_space_or_equals() -> None:
+    """``_format_value`` JSON-encodes strings containing ``" "`` or ``"="`` so
+    the ``k=v`` rendering remains unambiguous (line 89)."""
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="m",
+        args=(),
+        exc_info=None,
+    )
+    record.ctx = {"note": "has space", "raw": "k=v"}  # type: ignore[attr-defined]
+    line = TextFormatter().format(record)
+    # JSON-quoted because of the space / '=' inside.
+    assert 'note="has space"' in line
+    assert 'raw="k=v"' in line
+
+
+def test_format_value_json_encodes_dict_and_list_values() -> None:
+    """``_format_value`` compact-JSON-encodes dict/list values (line 91)."""
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="m",
+        args=(),
+        exc_info=None,
+    )
+    record.ctx = {"d": {"a": 1}, "lst": [1, 2]}  # type: ignore[attr-defined]
+    line = TextFormatter().format(record)
+    assert 'd={"a":1}' in line
+    assert "lst=[1,2]" in line
+
+
+def test_text_formatter_with_only_event_in_ctx_omits_trailing_kv() -> None:
+    """When ``ctx`` contains *only* the reserved ``event`` key, no ``kv`` tail
+    is appended (branch 79→81: kv is empty after filtering)."""
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="m",
+        args=(),
+        exc_info=None,
+    )
+    record.ctx = {"event": "ping"}  # type: ignore[attr-defined]
+    line = TextFormatter().format(record)
+    # Just the header — no ``  k=v`` suffix.
+    assert line.endswith(" m")
+
+
+def test_text_formatter_without_ctx_skips_kv_block() -> None:
+    """No ``ctx`` extra → the dict branch in TextFormatter is bypassed (branch
+    76→81)."""
+    record = stdlib_logging.LogRecord(
+        name="t",
+        level=stdlib_logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="m",
+        args=(),
+        exc_info=None,
+    )
+    # No ctx attribute set.
+    line = TextFormatter().format(record)
+    assert line.endswith(" m")

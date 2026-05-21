@@ -48,7 +48,7 @@ source = ["src/codesearch_mcp"]
 omit = ["src/codesearch_mcp/__main__.py"]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 100
 show_missing = true
 skip_covered = false
 exclude_lines = [

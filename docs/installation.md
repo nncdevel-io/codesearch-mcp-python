@@ -41,21 +41,41 @@ uv run codesearch-sync --help
 
 ## 設定ファイルの配置
 
-利用者が用意するのは以下の 2 ファイル。例は `examples/` を参照。
+利用者が用意するのは最大 3 ファイル。同梱の `.example` テンプレートを
+リポ直下の `config/` に置けば、`codesearch-mcp` / `codesearch-sync` は
+追加引数なしで auto-discovery する。
 
-| ファイル | 内容 | パーミッション |
-| --- | --- | --- |
-| `repos.toml` | 検索対象リポジトリ (ID / リモート URL / ブランチ / ホスティング種別) | 任意 (機密ではない) |
-| `secrets.toml` | 認証情報 (token / SSH 鍵パス)。**必須でない** (公開リポジトリのみなら不要) | **600 必須** |
+| ファイル | 内容 | 必須 | パーミッション |
+| --- | --- | --- | --- |
+| `config/repos.toml` | 検索対象リポジトリ (ID / リモート URL / ブランチ / ホスティング種別)。トップレベルに `workspace_root` / `secrets` のパス指定も書ける | 必須 | 任意 (機密ではない) |
+| `config/secrets.toml` | 認証情報 (token / SSH 鍵パス) | 公開リポジトリのみなら不要 | **600 必須** |
+| `config/server.toml` | 起動パラメータ (`transport` / `host` / `port` / `enable_scheduler`) | 不要 (CLI / env でも与えられる) | 任意 |
 
 `secrets.toml` のパーミッションが 600 より緩い場合、サーバ起動は中断される。
 
 ```bash
-cp config/repos.toml.example ./repos.toml
-cp config/secrets.toml.example ./secrets.toml
-chmod 600 ./secrets.toml
-$EDITOR ./repos.toml ./secrets.toml
+cp config/repos.toml.example   config/repos.toml
+cp config/secrets.toml.example config/secrets.toml
+cp config/server.toml.example  config/server.toml      # 任意
+chmod 600 config/secrets.toml
+$EDITOR config/repos.toml config/secrets.toml config/server.toml
 ```
+
+### 解決順序 (precedence)
+
+各設定値は以下の優先順位で解決される (左が強い):
+
+| 値 | precedence |
+| --- | --- |
+| `repos.toml` のパス | `--repos` > `CODE_SEARCH_REPOS_PATH` > `./config/repos.toml` (存在時) |
+| `secrets.toml` のパス | `--secrets` > `CODE_SEARCH_SECRETS_PATH` > `repos.toml` 内 `secrets =` > `./config/secrets.toml` (存在時) > なし |
+| workspace ルート | `--workspace-root` > `CODE_SEARCH_WORKSPACE_ROOT` > `repos.toml` 内 `workspace_root =` > `./workspaces` |
+| `server.toml` のパス | `--config` > `CODE_SEARCH_CONFIG_PATH` > `./config/server.toml` (存在時) > 組み込みデフォルト |
+| `transport` / `host` / `port` / `enable_scheduler` | CLI フラグ (e.g. `--transport http`) > `server.toml` の値 > 組み込みデフォルト |
+
+明示パス (`--repos /etc/...`) が指定された場合はそれが絶対優先で、ファイル
+未存在なら起動失敗。auto-discovery の `./config/*.toml` は存在しないとき
+だけ次の候補へフォールバックする。
 
 ## リポジトリ description の設計
 
@@ -167,26 +187,40 @@ Backend (batch 層). Python + Celery. 夜次集計・通知キューの非同期
 
 | 変数 | 用途 | 既定値 |
 | --- | --- | --- |
-| `CODE_SEARCH_REPOS_PATH` | `repos.toml` のパス | (引数 `--repos` で指定) |
-| `CODE_SEARCH_SECRETS_PATH` | `secrets.toml` のパス | (省略時は匿名アクセス) |
+| `CODE_SEARCH_REPOS_PATH` | `repos.toml` のパス | auto-discovery (`./config/repos.toml`) |
+| `CODE_SEARCH_SECRETS_PATH` | `secrets.toml` のパス | auto-discovery (`./config/secrets.toml`) |
 | `CODE_SEARCH_WORKSPACE_ROOT` | ワークスペースルート | `./workspaces` |
+| `CODE_SEARCH_CONFIG_PATH` | `server.toml` のパス | auto-discovery (`./config/server.toml`) |
 | `CODE_SEARCH_LOG_LEVEL` | ログレベル | `INFO` |
 
-CLI フラグ (`--repos` / `--secrets` / `--workspace-root`) が指定された場合は
-そちらが優先される。
+CLI フラグ (`--repos` / `--secrets` / `--workspace-root` / `--config`
+/ `--transport` / `--host` / `--port` / `--enable-scheduler` /
+`--no-enable-scheduler`) が指定された場合はそちらが優先される (上の
+「解決順序」参照)。
+
+ログは標準エラー出力先が **TTY なら人間可読のテキスト形式**、それ以外
+(パイプ / リダイレクト / コンテナ) では **JSON 形式**で出力される。常駐
+プロセスとしてログ集約基盤に流す前提では JSON が選ばれる。
 
 ## 初回同期
 
 最初の `git clone` をしておくと、サーバ起動直後から検索が可能になる。
+`config/repos.toml` を auto-discovery される場所に置いた状態で:
 
 ```bash
-uv run codesearch-sync \
-    --repos ./repos.toml \
-    --secrets ./secrets.toml \
-    --workspace-root ./workspaces
+uv run codesearch-sync
 ```
 
 出力は各リポジトリの成否を JSON で返す。すべて成功すれば終了コード 0。
+明示的にパスを指定したい場合は `--repos` / `--secrets` /
+`--workspace-root` で上書きできる。
+
+同期が完了した時点でサーバ (`codesearch-mcp serve`) が起動済みの場合、
+`codesearch-sync` は `<workspace_root>/.serve.pid` を読んで `SIGHUP` を
+送り、serve は受信を契機に各リポジトリの状態 (`state` / `last_commit` /
+`last_sync_at`) を `.git` の中身から再評価する。**再起動なしで反映される**。
+PID file が無ければ no-op。詳細は
+[`docs/operations.md`](operations.md#外部-sync-後の状態反映-sighup) を参照。
 
 ## 開発者向け: stdio でローカル起動する
 
@@ -198,7 +232,8 @@ uv run codesearch-sync \
 
 ### Claude Code
 
-`~/.claude/mcp.json` または対象プロジェクトの `.mcp.json` に追記する:
+`~/.claude/mcp.json` または対象プロジェクトの `.mcp.json` に追記する。
+`--directory` が指す先に `config/repos.toml` を置いておけば追加引数は不要:
 
 ```json
 {
@@ -207,15 +242,15 @@ uv run codesearch-sync \
       "command": "uv",
       "args": [
         "run", "--directory", "/path/to/codesearch-mcp-python",
-        "codesearch-mcp", "serve", "--transport", "stdio",
-        "--repos", "/path/to/repos.toml",
-        "--secrets", "/path/to/secrets.toml",
-        "--workspace-root", "/path/to/workspaces"
+        "codesearch-mcp", "serve", "--transport", "stdio"
       ]
     }
   }
 }
 ```
+
+`config/` 以外の場所に設定ファイルを置きたい場合は `--repos` /
+`--secrets` / `--workspace-root` で個別指定するか、env で渡す。
 
 ### Claude Desktop
 
@@ -229,10 +264,10 @@ uv run codesearch-sync \
       "command": "uv",
       "args": [
         "run", "--directory", "/path/to/codesearch-mcp-python",
-        "codesearch-mcp", "serve", "--transport", "stdio",
-        "--repos", "/path/to/repos.toml"
+        "codesearch-mcp", "serve", "--transport", "stdio"
       ],
       "env": {
+        "CODE_SEARCH_REPOS_PATH": "/path/to/repos.toml",
         "CODE_SEARCH_SECRETS_PATH": "/path/to/secrets.toml",
         "CODE_SEARCH_WORKSPACE_ROOT": "/path/to/workspaces"
       }

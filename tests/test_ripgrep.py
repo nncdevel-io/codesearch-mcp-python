@@ -140,6 +140,67 @@ def test_parse_rg_json_extracts_matches_and_contexts_and_counts() -> None:
     assert {c.line_number for c in result.contexts} == {9, 11}
 
 
+def test_files_argv_follow_gitignore_omits_ignore_overrides() -> None:
+    """With ``follow_gitignore=True`` the ``--no-ignore-vcs/--no-ignore`` pair
+    is omitted (branch 87→89)."""
+    argv = build_files_argv(pattern="**/*.py", path=None, follow_gitignore=True)
+    assert "--no-ignore-vcs" not in argv
+    assert "--no-ignore" not in argv
+
+
+def test_parse_rg_json_text_field_fallback_for_unknown_shape() -> None:
+    """``_text_field`` returns ``""`` when the JSON event lacks both ``text``
+    and ``bytes`` (line 108). Reach via a match event whose ``lines`` field is
+    an empty object."""
+    events = [
+        {
+            "type": "match",
+            "data": {
+                "path": {"text": "a.py"},
+                "lines": {},  # neither text nor bytes
+                "line_number": 1,
+            },
+        },
+    ]
+    stdout = "\n".join(json.dumps(e) for e in events).encode("utf-8")
+    result = parse_rg_json(stdout)
+    assert result.matches[0].line_content == ""
+
+
+def test_parse_rg_json_skips_blank_lines_and_invalid_json() -> None:
+    """Blank lines (line 125) and lines that fail ``json.loads`` (lines
+    128-129) are silently skipped."""
+    valid = json.dumps(
+        {
+            "type": "match",
+            "data": {
+                "path": {"text": "a.py"},
+                "lines": {"text": "hit\n"},
+                "line_number": 1,
+            },
+        }
+    )
+    stdout = ("\n\n" + valid + "\n{not json}\n").encode("utf-8")
+    result = parse_rg_json(stdout)
+    assert len(result.matches) == 1
+    assert result.matches[0].file_path == "a.py"
+
+
+def test_parse_rg_json_skips_end_event_with_zero_matches() -> None:
+    """An ``end`` event whose ``stats.matches == 0`` does NOT append to
+    files_with_matches (branch 161→123 false leg)."""
+    events = [
+        {
+            "type": "end",
+            "data": {"path": {"text": "empty.py"}, "stats": {"matches": 0}},
+        },
+    ]
+    stdout = "\n".join(json.dumps(e) for e in events).encode("utf-8")
+    result = parse_rg_json(stdout)
+    assert result.files_with_matches == []
+    assert result.counts == {}
+
+
 def test_parse_rg_json_decodes_base64_bytes_paths() -> None:
     import base64
 

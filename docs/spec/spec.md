@@ -758,10 +758,17 @@ JSON Schema 違反 (型不一致、必須項目欠落、enum 範囲外、
 
 ### 7.1 repos.toml
 
-リポジトリ定義の設定ファイル。配置場所は起動引数または
-環境変数 `CODE_SEARCH_REPOS_PATH` で指定する。
+リポジトリ定義の設定ファイル。配置場所は **CLI フラグ `--repos`** >
+**環境変数 `CODE_SEARCH_REPOS_PATH`** > **auto-discovery
+`./config/repos.toml`** の順で解決する。明示パスが存在しない場合は
+起動失敗、auto-discovery 候補が存在しない場合も同じく起動失敗
+(catalog は必須なので)。
 
 ```toml
+# 任意のトップレベルフィールド (運用パスをファイル側にまとめたい場合)
+workspace_root = "/var/lib/codesearch/workspaces"
+secrets = "/etc/codesearch/secrets.toml"
+
 [[repository]]
 id = "main-app"
 remote = "git@github.com:example/main-app.git"
@@ -775,6 +782,16 @@ Backend service for the main customer-facing app. FastAPI + SQLAlchemy.
 Key dirs: billing/, auth/, models/.
 """
 ```
+
+#### トップレベルフィールド
+
+| フィールド | 必須 | 型 | 説明 |
+| --- | --- | --- | --- |
+| `workspace_root` | 任意 | string | clone 先ディレクトリ。CLI `--workspace-root` / env `CODE_SEARCH_WORKSPACE_ROOT` で上書き可。未指定なら `./workspaces` |
+| `secrets` | 任意 | string | `secrets.toml` のパス。CLI `--secrets` / env `CODE_SEARCH_SECRETS_PATH` / auto-discovery (`./config/secrets.toml`) で上書き可 |
+| `repository` | 必須 | array of table | 下記の `[[repository]]` 配列 |
+
+#### `[[repository]]` の要素
 
 | フィールド | 必須 | 型 | 制約 |
 | --- | --- | --- | --- |
@@ -791,8 +808,10 @@ Key dirs: billing/, auth/, models/.
 
 認証情報を分離して格納する設定ファイル。
 パーミッションは 600 とする。Git にコミットしてはならない。
-配置場所は起動引数または環境変数 `CODE_SEARCH_SECRETS_PATH` で
-指定する。
+配置場所は **CLI フラグ `--secrets`** > **環境変数
+`CODE_SEARCH_SECRETS_PATH`** > **`repos.toml` のトップレベル `secrets`** >
+**auto-discovery `./config/secrets.toml`** の順で解決する。どの候補も
+存在しない場合は匿名アクセスのみ扱う。
 
 ```toml
 [secrets.main-app]
@@ -814,7 +833,36 @@ ssh_key_path = "/etc/code-search/keys/internal-lib"
 `auth_type=none` の場合または該当セクションがない場合は
 匿名アクセスとして扱う。
 
-### 7.3 起動時の検証
+`repos.toml` の `[[repository]]` に対応しない `[secrets.<id>]` (orphan
+entry) は**警告 (`config_warning` ログイベント)** を出して無視される。
+起動は中断しない (例: cp してきた example をそのまま使った場合や、
+リポジトリを削除しても secrets を残した場合に頻発するため)。
+
+### 7.3 server.toml
+
+`codesearch-mcp serve` の起動パラメータをファイルに切り出すための任意設定。
+配置場所は **CLI フラグ `--config`** > **環境変数 `CODE_SEARCH_CONFIG_PATH`**
+> **auto-discovery `./config/server.toml`** の順。どれもなければ組み込み
+デフォルトを使う (= 起動失敗にはならない)。
+
+```toml
+transport = "http"          # "stdio" | "http"
+host = "127.0.0.1"
+port = 8000
+enable_scheduler = false
+```
+
+| フィールド | 必須 | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- | --- |
+| `transport` | 任意 | enum | `stdio` | `stdio` / `http` |
+| `host` | 任意 | string | `127.0.0.1` | HTTP バインドアドレス |
+| `port` | 任意 | integer | `8000` | HTTP バインドポート (1〜65535) |
+| `enable_scheduler` | 任意 | boolean | `false` | in-process 定期同期スケジューラ |
+
+CLI フラグ (`--transport` / `--host` / `--port` / `--enable-scheduler` /
+`--no-enable-scheduler`) は server.toml の値より優先される。
+
+### 7.4 起動時の検証
 
 サーバー起動時に以下を検証する。違反があれば起動を中止する。
 
@@ -823,6 +871,9 @@ ssh_key_path = "/etc/code-search/keys/internal-lib"
 - `id` がサーバー内で一意であること
 - `hosting` が enum の範囲内であること
 - 秘密情報ファイルのパーミッションが 600 以下であること
+- `server.toml` の `port` が 1〜65535 の範囲内であること
+
+orphan secret entry (§7.2 末尾) は警告に留め、起動は中断しない。
 
 ## 8. 性能保証
 

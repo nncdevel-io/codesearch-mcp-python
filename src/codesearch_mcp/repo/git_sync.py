@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..backends.command import base_env, run_checked, run_command
+from ..backends.command import base_env, run_checked
 from ..config.models import AuthType, RepositoryConfig, SecretConfig, Settings
 from ..errors import ErrorCode, ToolError
 from .manager import RepositoryManager
@@ -62,21 +62,6 @@ async def _git(
 ) -> str:
     res = await run_checked(["git", *argv], cwd=cwd, env=env, timeout=timeout)
     return res.stdout.decode("utf-8", errors="replace").strip()
-
-
-async def _git_raw(
-    argv: list[str],
-    *,
-    cwd: Path | None,
-    env: dict[str, str],
-    timeout: float | None = None,
-) -> tuple[int, str, str]:
-    res = await run_command(["git", *argv], cwd=cwd, env=env, timeout=timeout)
-    return (
-        res.returncode,
-        res.stdout.decode("utf-8", errors="replace"),
-        res.stderr.decode("utf-8", errors="replace"),
-    )
 
 
 async def clone_repository(

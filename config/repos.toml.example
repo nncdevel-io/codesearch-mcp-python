@@ -20,19 +20,27 @@
 # の設計" for the four required elements (layer / language / domain
 # keywords / boundary) and length guidance (60–200 chars).
 
+# This entry targets this very repository (the codesearch-mcp source tree)
+# so that copying the example as-is gives you a working trial setup.
 [[repository]]
-id = "main-app"
-remote = "https://github.com/example/main-app.git"
+id = "codesearch-mcp-python"
+remote = "https://github.com/nncdevel-io/codesearch-mcp-python.git"
 branch = "main"
 hosting = "github"
-hosting_base_url = "https://github.com/example/main-app"
+hosting_base_url = "https://github.com/nncdevel-io/codesearch-mcp-python"
 refresh_interval_seconds = 900
 exclude_paths = ["docs/generated/", "vendor/"]
 description = """\
-Backend API. Python + FastAPI. 決済・認証・通知・Webhook のドメインロジック。\
-UI は shop-frontend、共通型は shared-types を参照。\
+codesearch-mcp 本体のソースコード。Python 3.11+ / FastMCP / asyncio / Pydantic / uv。\
+import-linter で層を強制 (errors → pathsafe → giturl → config (TOML+Pydantic loader) \
+→ backends (ripgrep / git の非同期 subprocess、shell 禁止) → repo (RepositoryManager \
+/ git_sync / scheduler) → tools (MCP ツール 5 種) → server (FastMCP) → CLI) と \
+pytest スイート、日本語の要件/仕様/設計ドキュメントを含む。\
 """
 
+# Second entry illustrates an additional repository alongside the first —
+# fictional, used to show how multi-repo setups (different hosting / SSH
+# remote / description shape) look. Adjust or delete when adapting.
 [[repository]]
 id = "shop-frontend"
 remote = "git@gitlab.example.com:team/shop-frontend.git"
@@ -41,5 +49,5 @@ hosting = "gitlab"
 hosting_base_url = "https://gitlab.example.com/team/shop-frontend"
 description = """\
 Frontend SPA. TypeScript + React. 商品検索・カート・チェックアウト UI。\
-API は main-app、共通型は shared-types を参照。\
+API は別リポジトリ shop-api、共通型は shared-types を参照。\
 """

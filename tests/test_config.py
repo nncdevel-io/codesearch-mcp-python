@@ -390,3 +390,211 @@ auth_type = "none"
     # log_event stores the structured payload on the record's `ctx` extra.
     warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any(getattr(rec, "ctx", {}).get("reason") == "orphan_secret_entries" for rec in warnings)
+
+
+@pytest.mark.parametrize(
+    ("exclude_paths", "expected_message"),
+    [
+        ([""], "must be non-empty"),
+        (["/abs/path"], "must be relative"),
+        (["a/../b"], "must not contain .."),
+    ],
+)
+def test_repository_exclude_paths_validation(
+    exclude_paths: list[str], expected_message: str
+) -> None:
+    """``RepositoryConfig._validate_exclude_paths`` enforces non-empty, relative,
+    and traversal-free entries (lines 86-91)."""
+    with pytest.raises(Exception) as ei:
+        RepositoryConfig(
+            id="ok",
+            remote="x",
+            branch="main",
+            hosting=Hosting.GITHUB,
+            hosting_base_url="https://example.com",
+            exclude_paths=exclude_paths,
+        )
+    assert expected_message in str(ei.value)
+
+
+def test_secret_none_must_not_have_credentials() -> None:
+    """``SecretConfig._validate_auth_fields`` rejects ``auth_type=none`` paired
+    with token/ssh_key_path (line 109)."""
+    with pytest.raises(Exception) as ei:
+        SecretConfig(auth_type=AuthType.NONE, token="leftover")
+    assert "must be unset when auth_type=none" in str(ei.value)
+    with pytest.raises(Exception) as ei:
+        SecretConfig(auth_type=AuthType.NONE, ssh_key_path="/leftover")
+    assert "must be unset when auth_type=none" in str(ei.value)
+
+
+def test_read_toml_wraps_os_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When reading the TOML file raises ``OSError``, ``_read_toml`` re-wraps it
+    as ``ConfigError`` (lines 36-37)."""
+    p = tmp_path / "repos.toml"
+    _write(p, REPOS_FIXTURE)
+
+    def _boom(self: Path) -> bytes:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_bytes", _boom)
+    with pytest.raises(ConfigError) as ei:
+        load_repos(p)
+    assert "failed to read config file" in str(ei.value)
+
+
+def test_load_repositories_file_rejects_invalid_schema(tmp_path: Path) -> None:
+    """Repos TOML that parses but fails Pydantic validation raises
+    ``ConfigError`` (lines 52-53)."""
+    p = tmp_path / "repos.toml"
+    # ``hosting`` is required but missing → Pydantic ValidationError.
+    _write(
+        p,
+        """
+[[repository]]
+id = "a"
+remote = "x"
+branch = "main"
+""",
+    )
+    with pytest.raises(ConfigError) as ei:
+        load_repositories_file(p)
+    assert "invalid repos.toml" in str(ei.value)
+
+
+def test_check_secret_permissions_wraps_os_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When ``Path.stat()`` raises ``OSError`` on the secrets file,
+    ``_check_secret_permissions`` re-wraps as ``ConfigError`` (lines 67-68)."""
+    p = tmp_path / "secrets.toml"
+    _write(p, '[secrets.a]\nauth_type = "none"\n')
+    os.chmod(p, 0o600)
+
+    original_stat = Path.stat
+
+    def _boom(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+        if self == p:
+            raise PermissionError("denied")
+        return original_stat(self, *args, **kwargs)  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(Path, "stat", _boom)
+    with pytest.raises(ConfigError) as ei:
+        load_secrets(p)
+    assert "failed to stat secrets file" in str(ei.value)
+
+
+def test_load_secrets_rejects_non_table_secrets_section(tmp_path: Path) -> None:
+    """``[secrets]`` must be a TOML table, not a scalar or array (line 84)."""
+    p = tmp_path / "secrets.toml"
+    _write(p, 'secrets = "not-a-table"\n')
+    os.chmod(p, 0o600)
+    with pytest.raises(ConfigError) as ei:
+        load_secrets(p)
+    assert "[secrets] section must be a table" in str(ei.value)
+
+
+def test_load_secrets_rejects_invalid_entry(tmp_path: Path) -> None:
+    """A malformed ``[secrets.<id>]`` entry raises ``ConfigError`` referencing
+    the offending id (lines 89-90)."""
+    p = tmp_path / "secrets.toml"
+    _write(
+        p,
+        """
+[secrets.bad]
+auth_type = "token"
+""",  # token auth without token field
+    )
+    os.chmod(p, 0o600)
+    with pytest.raises(ConfigError) as ei:
+        load_secrets(p)
+    assert "invalid [secrets.bad]" in str(ei.value)
+
+
+def test_resolve_secrets_auto_discovery_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When no CLI/env/file value is set and ``./config/secrets.toml`` exists,
+    ``resolve_secrets_path`` returns that default (line 122)."""
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    (tmp_path / "config").mkdir()
+    secrets = tmp_path / "config" / "secrets.toml"
+    secrets.write_text("# placeholder\n")
+    assert resolve_secrets_path(None, None) == Path("config/secrets.toml")
+
+
+def test_load_settings_no_warning_when_all_descriptions_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Two repos both with descriptions → ``_warn_on_missing_descriptions``
+    falls through without logging (branch 193→exit)."""
+    import logging
+
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    p = tmp_path / "repos.toml"
+    _write(
+        p,
+        """
+[[repository]]
+id = "a"
+remote = "x"
+branch = "main"
+hosting = "github"
+hosting_base_url = "https://github.com/o/a"
+description = "alpha"
+
+[[repository]]
+id = "b"
+remote = "y"
+branch = "main"
+hosting = "github"
+hosting_base_url = "https://github.com/o/b"
+description = "beta"
+""",
+    )
+    with caplog.at_level(logging.WARNING):
+        load_settings(repos_arg=str(p), secrets_arg=None, workspace_arg=None)
+    warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert not any(
+        getattr(rec, "ctx", {}).get("reason") == "repositories_without_description"
+        for rec in warnings
+    )
+
+
+def test_load_settings_warns_on_missing_descriptions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With 2+ repos and any missing ``description``, ``_warn_on_missing_descriptions``
+    logs a structured warning (lines 192-194)."""
+    import logging
+
+    monkeypatch.chdir(tmp_path)
+    _clear_env(monkeypatch)
+    p = tmp_path / "repos.toml"
+    _write(
+        p,
+        """
+[[repository]]
+id = "a"
+remote = "x"
+branch = "main"
+hosting = "github"
+hosting_base_url = "https://github.com/o/a"
+
+[[repository]]
+id = "b"
+remote = "y"
+branch = "main"
+hosting = "github"
+hosting_base_url = "https://github.com/o/b"
+""",
+    )
+    with caplog.at_level(logging.WARNING):
+        load_settings(repos_arg=str(p), secrets_arg=None, workspace_arg=None)
+    warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert any(
+        getattr(rec, "ctx", {}).get("reason") == "repositories_without_description"
+        for rec in warnings
+    )

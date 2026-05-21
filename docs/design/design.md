@@ -49,12 +49,13 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
 
 | モジュール | 責務 |
 | --- | --- |
-| `__main__.py` | CLI。`serve --transport stdio\|http` と `sync` サブコマンド、起動時検証、依存配線 |
-| `config/models.py` | repos.toml / secrets.toml の Pydantic モデル |
-| `config/loader.py` | 読込と起動時検証 (TOML パース / 必須 / `id` 一意 / `hosting` enum / 秘密ファイル権限 600 以下) |
-| `repo/manager.py` | リポジトリ登録、ワークスペースパス、readiness 状態、最終同期状況 |
+| `__main__.py` | CLI。`serve --transport stdio\|http` と `sync` サブコマンド、起動時検証、依存配線、SIGHUP ハンドラ登録、PID file の lifecycle |
+| `config/models.py` | repos.toml (`RepositoriesFile`) / secrets.toml / server.toml (`ServerConfig`) の Pydantic モデル |
+| `config/loader.py` | 読込と起動時検証 (TOML パース / 必須 / `id` 一意 / `hosting` enum / 秘密ファイル権限 600 以下)、auto-discovery パス解決 (`resolve_repos_path` / `resolve_secrets_path` / `resolve_workspace_root` / `discover_server_config_path`) |
+| `repo/manager.py` | リポジトリ登録、ワークスペースパス、readiness 状態、最終同期状況。`refresh_states_from_disk` で `.git` を直接読んで `last_commit` / `last_sync_at` を導出 |
 | `repo/git_sync.py` | clone (`--branch --single-branch`)、fetch、`reset --hard`、認証 (token/ssh_key/none)、リポジトリ単位の障害分離 |
 | `repo/scheduler.py` | 任意の asyncio 定期更新ループ、次 tick リトライ |
+| `repo/notify.py` | sync→serve 通知の PID file + SIGHUP ベストエフォート送信 (`write_serve_pid` / `notify_serve_if_running`) |
 | `backends/command.py` | 非同期サブプロセス実行、タイムアウト、`BACKEND_FAILURE` 写像 |
 | `backends/ripgrep.py` | `rg` argv 構築と `--json` 出力パース (search_code / list_files) |
 | `backends/git_ls.py` | `git ls-files` 実行 |

@@ -133,6 +133,35 @@ def test_notify_returns_false_when_process_is_gone(tmp_path: Path) -> None:
     assert notify_serve_if_running(tmp_path) is False
 
 
+def test_notify_returns_false_when_platform_lacks_sighup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On platforms without ``SIGHUP`` (Windows), notification silently
+    no-ops (line 59). Simulated by deleting the attribute."""
+    import codesearch_mcp.repo.notify as notify_mod
+
+    monkeypatch.delattr(notify_mod.signal, "SIGHUP", raising=False)
+    assert notify_mod.notify_serve_if_running(tmp_path) is False
+
+
+def test_notify_reraises_unexpected_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``os.kill`` raising an OSError whose errno is not ESRCH/EPERM is *not*
+    swallowed — it re-raises so the caller learns of the unexpected condition
+    (line 72: ``raise``)."""
+    import codesearch_mcp.repo.notify as notify_mod
+
+    serve_pid_path(tmp_path).write_text("12345\n")
+
+    def fake_kill(pid: int, sig: int) -> None:
+        raise OSError(99, "unexpected")
+
+    monkeypatch.setattr(notify_mod.os, "kill", fake_kill)
+    with pytest.raises(OSError):
+        notify_mod.notify_serve_if_running(tmp_path)
+
+
 @pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP not supported")
 def test_notify_actually_signals_running_process(tmp_path: Path) -> None:
     received: list[int] = []

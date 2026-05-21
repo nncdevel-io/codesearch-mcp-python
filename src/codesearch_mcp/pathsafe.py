@@ -40,7 +40,11 @@ def normalize_relative(path: str) -> str:
             {"path": path},
         )
     parts = normalized.split("/")
-    if any(part == ".." for part in parts):
+    if any(part == ".." for part in parts):  # pragma: no cover
+        # Defensive: any ``..`` part should already have been trapped by the
+        # ``startswith("../") or normalized == ".."`` check above, since
+        # ``posixpath.normpath`` collapses interior ``..`` and only leaves it
+        # when the path begins with one.
         raise ToolError(
             ErrorCode.INVALID_PATH,
             "path traversal is not allowed",

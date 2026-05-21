@@ -63,18 +63,23 @@ Model Context Protocol (MCP) サーバー。Claude Code・Claude Desktop・自�
 
 ## 🏁 3 ステップで使い始める
 
-**1️⃣ インストール** — `uv` で依存を入れ、`repos.toml` (検索対象) と必要なら
-`secrets.toml` (認証情報) を用意する。
+**1️⃣ インストール** — `uv sync --frozen` で依存を入れ、`config/repos.toml`
+(検索対象、必須) と必要なら `config/secrets.toml` (認証情報)、起動
+パラメータをファイルで持ちたい場合は `config/server.toml` を置く。
+これらは **同梱の `.example` をコピーしてリポ直下の `config/` に置けば
+auto-discovery で読まれる** (CLI / env で上書き可)。
 👉 詳細: [`docs/installation.md`](docs/installation.md)
 
-**2️⃣ サーバーを HTTP で起動する** — 下記の「🌐 サーバー起動 (Streamable HTTP)」
-を参考に常駐させ、MCP クライアントから `http://<host>:<port>/mcp/` を指す。
-個人開発で **stdio** でクライアント直結したい場合は
+**2️⃣ サーバーを HTTP で起動する** — `uv run codesearch-mcp serve
+--transport http` を常駐させ、MCP クライアントから
+`http://<host>:<port>/mcp/` を指す。個人開発で **stdio** でクライアント
+直結したい場合は
 [`docs/installation.md`](docs/installation.md#開発者向け-stdio-でローカル起動する)
 を参照。
 
 **3️⃣ (任意) 定期同期を構成** — 常設で動かす場合は cron / systemd / 同居
-スケジューラのいずれかを選ぶ。
+スケジューラのいずれかを選ぶ。外部 `codesearch-sync` は完了時に
+`SIGHUP` で実行中の serve を通知するので **再起動なしで** 状態反映される。
 👉 詳細: [`docs/operations.md`](docs/operations.md)
 
 ---
@@ -82,12 +87,18 @@ Model Context Protocol (MCP) サーバー。Claude Code・Claude Desktop・自�
 ## 🌐 サーバー起動 (Streamable HTTP)
 
 本サーバは **チーム / 複数ユーザー向けに常駐させる Streamable HTTP**
-運用を主とする。`repos.toml` と `secrets.toml` を用意したうえで:
+運用を主とする。リポ直下に `config/repos.toml` (必須) と必要なら
+`config/secrets.toml` を置いた状態で:
 
 ```bash
-uv run codesearch-mcp serve --transport http --host 127.0.0.1 --port 8000 \
-    --repos /path/to/repos.toml --secrets /path/to/secrets.toml
+uv run codesearch-mcp serve --transport http --host 127.0.0.1 --port 8000
 ```
+
+これらの引数を毎回書きたくない場合は `config/server.toml` に書ける
+(`transport` / `host` / `port` / `enable_scheduler`)。優先順位は
+**CLI > env > `config/server.toml` > 組み込みデフォルト**。同じく
+`--repos` / `--secrets` / `--workspace-root` も
+**CLI > env > `config/*.toml` 配置 > 組み込みデフォルト** の順で解決される。
 
 クライアント側のエンドポイント: `http://127.0.0.1:8000/mcp/`
 
@@ -181,7 +192,7 @@ async with streamablehttp_client("http://127.0.0.1:8000/mcp/") as (r, w, _):
         await session.initialize()
         result = await session.call_tool(
             "search_code",
-            {"pattern": "class\\s+StreamingResponseBuilder", "repository": "main-app"},
+            {"pattern": "class\\s+StreamingResponseBuilder", "repository": "codesearch-mcp-python"},
         )
 ```
 
@@ -195,20 +206,22 @@ async with streamablehttp_client("http://127.0.0.1:8000/mcp/") as (r, w, _):
 
 `scripts/probe.py` は MCP ホストアプリ (Claude Code 等) を持たない人や、
 サーバが生きているかを CI / 運用で確かめたいケース向けの参照クライアント。
+ツールごとの確認手順は
+[`scripts/README.ja.md`](scripts/README.ja.md) にまとめている。
 
 ```bash
-# 🌐 HTTP で常駐させたサーバを叩く
-uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/
+# 🌐 HTTP で常駐させたサーバの公開ツール一覧を取得
+uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ --list
 
 # ⌨️ stdio でサーバを起動して叩く (起動コマンドは `--` の後)
 uv run python scripts/probe.py --stdio -- \
-    uv run codesearch-mcp serve --transport stdio --repos ./config/repos.toml.example
+    uv run codesearch-mcp serve --transport stdio
 
 # 🛠️ 任意のツールを実行 (引数は key=value、JSON として解釈)
 uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \
     --tool search_code \
-    --arg pattern=needle \
-    --arg repository=main-app
+    --arg pattern=ToolError \
+    --arg repository=codesearch-mcp-python
 ```
 
 ✅ 公開ツール一覧と各 description が表示できれば疎通成功。
@@ -247,7 +260,7 @@ uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \
 | 🚫 ベクトル検索なし | `ripgrep` と `git ls-files` で速く・正確に・引用可能 |
 | 🔗 引用ファースト | 検索結果は GitHub/GitLab/Bitbucket/Gitea の URL を行アンカー付きで返す |
 | 🧯 per-repo 分離 | 1 リポジトリの clone/fetch 失敗が他に波及しない |
-| ⛓️ 同期は別経路 | tool call が blocking pull することは禁止 — `codesearch-sync` CLI で分離 |
+| ⛓️ 同期は別経路 | tool call が blocking pull することは禁止 — `codesearch-sync` CLI で分離。完了時に `SIGHUP` で実行中の serve を通知し再起動不要で状態反映 |
 | 🛡️ パス安全 | 全パスは `pathsafe` で `..` / 絶対パスを拒否し realpath でリポジトリ内に閉じ込める |
 | 🧰 シェル禁止 | サブプロセスは `create_subprocess_exec` のみ。`shell=True` は Ruff S6xx でブロック |
 
