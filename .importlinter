@@ -1,0 +1,41 @@
+; import-linter: declare layer boundaries between modules of codesearch_mcp.
+; See design.md §3 and harness report §2.4.
+; Run with `uv run lint-imports`.
+
+[importlinter]
+root_package = codesearch_mcp
+
+[importlinter:contract:layered-architecture]
+name = Layered architecture (outer layers may import inner layers, never the reverse)
+type = layers
+layers =
+    codesearch_mcp.__main__
+    codesearch_mcp.server
+    codesearch_mcp.tools | codesearch_mcp.resources
+    codesearch_mcp.observability
+    codesearch_mcp.repo
+    codesearch_mcp.backends | codesearch_mcp.config
+    codesearch_mcp.pathsafe | codesearch_mcp.giturl | codesearch_mcp.logging
+    codesearch_mcp.errors
+
+[importlinter:contract:tools-independent]
+name = Tools must not import each other
+type = independence
+modules =
+    codesearch_mcp.tools.search_code
+    codesearch_mcp.tools.list_files
+    codesearch_mcp.tools.list_tree
+    codesearch_mcp.tools.read_file
+
+[importlinter:contract:errors-have-no-deps]
+name = errors.py is a pure leaf and depends on nothing within the project
+type = forbidden
+source_modules =
+    codesearch_mcp.errors
+forbidden_modules =
+    codesearch_mcp.config
+    codesearch_mcp.backends
+    codesearch_mcp.repo
+    codesearch_mcp.tools
+    codesearch_mcp.server
+    codesearch_mcp.observability
