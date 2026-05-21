@@ -202,7 +202,7 @@ uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/
 
 # ⌨️ stdio でサーバを起動して叩く (起動コマンドは `--` の後)
 uv run python scripts/probe.py --stdio -- \
-    uv run codesearch-mcp serve --transport stdio --repos ./examples/repos.toml
+    uv run codesearch-mcp serve --transport stdio --repos ./config/repos.toml.example
 
 # 🛠️ 任意のツールを実行 (引数は key=value、JSON として解釈)
 uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \

@@ -27,7 +27,7 @@ Probe a stdio-launched server in-process. Pass the launch command after
 ``--stdio --``::
 
     uv run python scripts/probe.py --stdio -- \\
-        uv run codesearch-mcp serve --transport stdio --repos ./examples/repos.toml
+        uv run codesearch-mcp serve --transport stdio --repos ./config/repos.toml.example
 """
 
 from __future__ import annotations

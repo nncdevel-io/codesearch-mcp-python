@@ -16,3 +16,5 @@ htmlcov/
 
 # Claude Code: per-user local overrides stay out of version control.
 .claude/settings.local.json
+config/secrets.toml
+config/repos.toml

@@ -51,8 +51,8 @@ uv run codesearch-sync --help
 `secrets.toml` のパーミッションが 600 より緩い場合、サーバ起動は中断される。
 
 ```bash
-cp examples/repos.toml ./repos.toml
-cp examples/secrets.toml ./secrets.toml
+cp config/repos.toml.example ./repos.toml
+cp config/secrets.toml.example ./secrets.toml
 chmod 600 ./secrets.toml
 $EDITOR ./repos.toml ./secrets.toml
 ```
