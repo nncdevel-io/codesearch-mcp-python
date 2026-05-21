@@ -15,7 +15,7 @@
 > ベクトル検索なし。埋め込みインデックスなし。
 > 引用は Git URL (行アンカー付き) で即貼り付け。
 
-[![verify](https://github.com/t-izuno/codesearch-mcp-python/actions/workflows/verify.yml/badge.svg)](https://github.com/t-izuno/codesearch-mcp-python/actions/workflows/verify.yml)
+[![verify](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml/badge.svg)](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](#-ライセンス)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
