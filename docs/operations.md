@@ -129,7 +129,8 @@ uv run codesearch-mcp status --repos /etc/codesearch/repos.toml
 ```
 
 各リポジトリの `state` (`ready` / `failed` / `uninitialized`)、
-`last_outcome`、`last_sync_at`、`last_commit`、`last_error` を JSON で返す。
+`last_sync_at`、`last_outcome`、`last_error`、`last_commit` を JSON で返す
+(意味順: 識別子 → 現在の状態 → いつ → 結果 → 原因 → 現在地)。
 監視システムから定期収集する用途を想定している。
 
 ## 障害分離

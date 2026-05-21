@@ -129,7 +129,7 @@ host applications that do not surface Resources to the LLM.
 Use this FIRST in a fresh conversation if you do not yet know which
 `repository` ids are valid. Each entry contains id, branch, hosting_base_url,
 exclude_paths, refresh_interval_seconds, and a status snapshot
-(state / last_outcome / last_sync_at / last_commit / last_error) so you can
+(state / last_sync_at / last_outcome / last_error / last_commit) so you can
 choose a repo that is actually ready before searching.
 
 This tool takes no arguments. It is a discovery aid; it does not search or
@@ -142,4 +142,5 @@ The server also advertises one Resource per configured repository at
 `codesearch://repo/{id}`. Listing them is how an LLM discovers what
 `repository` values are valid. Reading a resource returns a JSON object
 with branch, hosting metadata, and sync status (state, last_sync_at,
-last_commit, last_error), useful for verifying freshness before search.
+last_outcome, last_error, last_commit), useful for verifying freshness
+before search.
