@@ -1,0 +1,31 @@
+# Code Search MCP Server — example repository config.
+# Set CODE_SEARCH_REPOS_PATH to point at this file (or pass --repos PATH).
+
+# The `description` field is the LLM's primary signal for choosing which
+# repository to search. See `docs/installation.md` "リポジトリ description
+# の設計" for the four required elements (layer / language / domain
+# keywords / boundary) and length guidance (60–200 chars).
+
+[[repository]]
+id = "main-app"
+remote = "https://github.com/example/main-app.git"
+branch = "main"
+hosting = "github"
+hosting_base_url = "https://github.com/example/main-app"
+refresh_interval_seconds = 900
+exclude_paths = ["docs/generated/", "vendor/"]
+description = """\
+Backend API. Python + FastAPI. 決済・認証・通知・Webhook のドメインロジック。\
+UI は shop-frontend、共通型は shared-types を参照。\
+"""
+
+[[repository]]
+id = "shop-frontend"
+remote = "git@gitlab.example.com:team/shop-frontend.git"
+branch = "develop"
+hosting = "gitlab"
+hosting_base_url = "https://gitlab.example.com/team/shop-frontend"
+description = """\
+Frontend SPA. TypeScript + React. 商品検索・カート・チェックアウト UI。\
+API は main-app、共通型は shared-types を参照。\
+"""

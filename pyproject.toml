@@ -1,0 +1,100 @@
+[project]
+name = "codesearch-mcp"
+version = "0.1.0"
+description = "Model Context Protocol server for searching Git-managed source code"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "codesearch-mcp" }]
+dependencies = [
+    "mcp>=1.2.0",
+    "pydantic>=2.6",
+    "anyio>=4.3",
+]
+
+[project.scripts]
+codesearch-mcp = "codesearch_mcp.__main__:main"
+codesearch-sync = "codesearch_mcp.__main__:sync_main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codesearch_mcp"]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.14.0",
+    "import-linter>=2.11",
+    "pip-audit>=2.10.0",
+    "pyrefly>=1.0.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "requires_git: integration tests that require the git binary on PATH",
+    "requires_rg: integration tests that require the ripgrep (rg) binary on PATH",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/codesearch_mcp"]
+omit = ["src/codesearch_mcp/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.pyrefly]
+# Strict static type checking on production code. Tests are excluded:
+# fixture parameters use pytest's dynamic injection that defeats annotations,
+# and MCP content unions require narrowing the runtime knows is safe.
+# See harness report §2.5 / §4.1.
+project-includes = ["src/**/*.py"]
+project-excludes = [".venv/**", ".uv/**", "**/__pycache__/**", "build/**", "dist/**"]
+python-version = "3.11.0"
+
+[tool.pyrefly.errors]
+# Treat partial annotations as hard errors: public functions must be typed.
+unannotated-parameter = true
+unannotated-return = true
+unannotated-attribute = true
+# Catch typos / missing names / bad calls.
+missing-argument = true
+missing-attribute = true
+bad-argument-type = true
+bad-return = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+# Security rules ("S" = bandit) are mandatory: subprocess safety, no shell=True,
+# no hardcoded passwords, etc. See harness report §4.4 / §4.7.
+select = ["E", "F", "I", "W", "B", "UP", "S"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert (S101) and synthetic credentials/paths inside fixtures.
+"tests/*" = ["B", "S101", "S105", "S106", "S108", "S603", "S607"]
+# Fixture helpers spawn git via subprocess; the input is always test-controlled.
+"tests/fixtures.py" = ["B", "S101", "S603", "S607"]

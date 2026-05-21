@@ -1,0 +1,45 @@
+# Example deployment for codesearch-mcp behind Streamable HTTP.
+# Run from the repo root after building the image:
+#     docker compose -f examples/docker-compose.yml up --build
+#
+# The compose file binds the example configs read-only and persists
+# the workspace tree in a named volume so git state survives restarts.
+
+services:
+  codesearch:
+    image: codesearch-mcp:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      CODE_SEARCH_REPOS_PATH: /etc/codesearch/repos.toml
+      CODE_SEARCH_SECRETS_PATH: /etc/codesearch/secrets.toml
+      CODE_SEARCH_WORKSPACE_ROOT: /var/lib/codesearch/workspaces
+      CODE_SEARCH_LOG_LEVEL: INFO
+    volumes:
+      - ./repos.toml:/etc/codesearch/repos.toml:ro
+      - ./secrets.toml:/etc/codesearch/secrets.toml:ro
+      - codesearch-workspaces:/var/lib/codesearch/workspaces
+    # In-process scheduler keeps the workspace fresh without an external cron.
+    # Drop --enable-scheduler if you prefer a sidecar `codesearch-sync` CronJob.
+    command:
+      - serve
+      - --transport
+      - http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --enable-scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://127.0.0.1:8000/mcp/\",timeout=2).status<500 else 1)' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  codesearch-workspaces:
