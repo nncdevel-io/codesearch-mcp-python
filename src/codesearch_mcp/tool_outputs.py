@@ -135,12 +135,14 @@ class ReadFileOutput(_StrictModel):
 
 
 class RepoSyncStatus(_StrictModel):
+    # Ordered for human readability: identity → current state → when →
+    # result → reason → current head. See SyncStatus in repo/manager.py.
     repository: str
     state: str
-    last_outcome: str | None
     last_sync_at: str | None
-    last_commit: str | None
+    last_outcome: str | None
     last_error: str | None
+    last_commit: str | None
 
 
 class RepoCatalogEntry(_StrictModel):

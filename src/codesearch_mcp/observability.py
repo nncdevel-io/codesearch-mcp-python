@@ -12,14 +12,15 @@ def sync_status_report(manager: RepositoryManager) -> list[dict[str, Any]]:
     for status in manager.all_status():
         report.append(
             {
+                # identity → current state → when → result → reason → head
                 "repository": status.repository_id,
                 "state": status.state.value,
-                "last_outcome": status.last_outcome.value if status.last_outcome else None,
                 "last_sync_at": status.last_sync_at.isoformat().replace("+00:00", "Z")
                 if status.last_sync_at
                 else None,
-                "last_commit": status.last_commit,
+                "last_outcome": status.last_outcome.value if status.last_outcome else None,
                 "last_error": status.last_error,
+                "last_commit": status.last_commit,
             }
         )
     return report

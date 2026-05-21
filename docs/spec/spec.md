@@ -549,17 +549,17 @@ Resources を LLM 文脈に注入しない MCP ホスト (現行 Claude Desktop 
                 "type": "string",
                 "enum": ["uninitialized", "ready", "failed"]
               },
+              "last_sync_at": { "type": ["string", "null"], "format": "date-time" },
               "last_outcome": {
                 "type": ["string", "null"],
                 "enum": ["success", "failure", null]
               },
-              "last_sync_at": { "type": ["string", "null"], "format": "date-time" },
-              "last_commit": { "type": ["string", "null"] },
-              "last_error": { "type": ["string", "null"] }
+              "last_error": { "type": ["string", "null"] },
+              "last_commit": { "type": ["string", "null"] }
             },
             "required": [
-              "repository", "state", "last_outcome",
-              "last_sync_at", "last_commit", "last_error"
+              "repository", "state", "last_sync_at",
+              "last_outcome", "last_error", "last_commit"
             ]
           }
         },
