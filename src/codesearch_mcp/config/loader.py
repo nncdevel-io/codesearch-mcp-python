@@ -61,9 +61,24 @@ def load_repos(path: Path) -> list[RepositoryConfig]:
     return load_repositories_file(path).repository
 
 
-def _check_secret_permissions(path: Path) -> None:
+def _check_secret_permissions(path: Path) -> bool:
+    """Single gate for secrets file existence + permissions.
+
+    Returns ``True`` when the file exists and is suitably tight (0600 or
+    stricter). Returns ``False`` when the file simply does not exist
+    (callers treat that as "no secrets configured"). Raises
+    :class:`ConfigError` on any other ``OSError`` (e.g. permission denied
+    while ``stat``'ing) or when the file is world/group-readable.
+
+    Uses ``stat()`` directly (not ``path.exists()``) because the latter's
+    OSError handling differs across Python versions: 3.11 propagates
+    ``PermissionError``, 3.13+ swallows it and returns ``False``. Going
+    through ``stat()`` keeps the wrapping behaviour consistent.
+    """
     try:
         st = path.stat()
+    except FileNotFoundError:
+        return False
     except OSError as exc:
         raise ConfigError(f"failed to stat secrets file: {path}: {exc}") from exc
     mode = stat.S_IMODE(st.st_mode)
@@ -72,12 +87,14 @@ def _check_secret_permissions(path: Path) -> None:
         raise ConfigError(
             f"{path}: secrets file permissions must be 600 or stricter (got {oct(mode)})"
         )
+    return True
 
 
 def load_secrets(path: Path | None) -> dict[str, SecretConfig]:
-    if path is None or not path.exists():
+    if path is None:
         return {}
-    _check_secret_permissions(path)
+    if not _check_secret_permissions(path):
+        return {}
     parsed = _read_toml(path)
     raw = parsed.get("secrets", {})
     if not isinstance(raw, dict):
