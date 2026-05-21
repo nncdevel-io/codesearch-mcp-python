@@ -18,3 +18,4 @@ htmlcov/
 .claude/settings.local.json
 config/secrets.toml
 config/repos.toml
+config/server.toml
