@@ -1,6 +1,6 @@
 [project]
 name = "codesearch-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Model Context Protocol server for searching Git-managed source code"
 requires-python = ">=3.11"
 readme = "README.md"
