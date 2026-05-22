@@ -271,10 +271,14 @@ uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \
 
 - 📥 [`docs/installation.md`](docs/installation.md) — 導入・初期設定
 - 🛠️ [`docs/operations.md`](docs/operations.md) — 常設運用・同期戦略・監視
-- 📋 [`docs/requirements.md`](docs/requirements.md) — 要件
+- 📦 [`docs/distribution.md`](docs/distribution.md) — 配布方針 (どの形態で
+  入れてどこから繋ぐか)
 - 📐 [`docs/spec/spec.md`](docs/spec/spec.md) — 外部仕様 (ツール入出力 /
   エラー / 設定ファイル / 性能保証)
-- 🏗️ [`docs/design/design.md`](docs/design/design.md) — 内部設計
+- 🤖 [`docs/usage-for-llm.md`](docs/usage-for-llm.md) — LLM 向け利用ガイダンス
+  (capability discovery 文言の原本)
+- 🗂️ [`docs/`](docs/) — その他(要件・内部設計・リリース手順 等の
+  開発者向け資料)
 
 ---
 
