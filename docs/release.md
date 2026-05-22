@@ -13,8 +13,11 @@
 ## 手順
 
 1. **バージョンを更新する**
-   `pyproject.toml` の `version` を次のリリース番号に変更し、PR を作成して
-   `main` にマージする。
+   以下を次のリリース番号に揃え、PR を作成して `main` にマージする:
+   - `pyproject.toml` の `version`
+   - `uv lock` を実行して `uv.lock` を再生成
+   - `README.md` のバージョンバッジ
+     (`https://img.shields.io/badge/version-vX.Y.Z-blue.svg`)
 
 2. **タグを作成して push する**
    マージ後の `main` で:
@@ -54,7 +57,10 @@
 
 ## リリース後
 
-- README のバージョンバッジは `pyproject.toml` から動的に取得するため
-  手動更新は不要(`main` に反映された時点で更新される)。
 - 必要に応じて
   [`docs/tasks/task.md`](tasks/task.md) のタスク状態を更新する。
+
+> 📝 README のバージョンバッジは静的(shields.io の static badge)。
+> `pyproject.toml` の version 更新と同じ PR で書き換える運用とする
+> (動的バッジは shields.io / GitHub camo の二重キャッシュで反映が
+> 遅く、リリース直後の見え方が崩れるため意図的に静的にしている)。
