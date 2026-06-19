@@ -36,3 +36,4 @@ PYSEC
 pyjwt
 jlowin
 ASGI
+Starlette

@@ -170,6 +170,20 @@ uv run codesearch-mcp status --repos /etc/codesearch/repos.toml
 秘密情報 (URL に埋め込まれたトークン、`token=` パラメータなど) は
 `codesearch_mcp.logging.redact()` で自動的に `***` に置換される。
 
+### JSON-RPC メッセージのデバッグ出力
+
+`CODE_SEARCH_LOG_LEVEL=DEBUG` のときに限り、MCP の JSON-RPC
+メッセージ（リクエスト・レスポンス・通知）を全文ログ出力する。
+stdio / HTTP のどちらのトランスポートでも出力される。
+
+- 既定（`INFO`）では一切出力しない。トラブルシューティング時のみ
+  有効化する
+- レスポンス全文を含むためログ量が大きくなる。常時有効化は避ける
+- 秘密情報は上記と同様に `redact()` で秘匿される
+- イベント名は `jsonrpc_message`、`direction` で `incoming`
+  （クライアントからサーバー）と `outgoing`（サーバーからクライアント）
+  を区別する
+
 ## リポジトリ description の運用 (運用側の観点)
 
 `repos.toml` の `description` フィールドの **書き方ガイドライン** は

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
+from types import TracebackType
 from typing import Any
 
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.message import SessionMessage
 from mcp.types import CallToolResult, GetPromptRequest, ListPromptsRequest
 
 from . import __version__
@@ -190,6 +194,114 @@ async def _dispatch(
     return result
 
 
+# --- JSON-RPC message debug logging (design §8) ----------------------------
+#
+# When the log level is DEBUG, every JSON-RPC message is logged in full. Both
+# stdio and Streamable HTTP funnel through the low-level
+# ``Server.run(read_stream, write_stream, init)``; wrapping that method tees
+# both message streams transport-agnostically. ASGI middleware would only
+# cover HTTP (not stdio), and the official mcp SDK exposes no message-level
+# middleware, so stream tee at the common funnel is the one clean interception
+# point (see design §8.1).
+
+
+def _log_jsonrpc(direction: str, item: SessionMessage | Exception) -> None:
+    """Log one JSON-RPC message at DEBUG, redacting secrets via the log layer.
+
+    ``direction`` is ``"incoming"`` (client → server) or ``"outgoing"``
+    (server → client). Serialization is skipped entirely unless DEBUG is
+    enabled so the default INFO operation pays no cost.
+    """
+    logger = get_logger()
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    if isinstance(item, Exception):
+        log_event("debug", "jsonrpc_message", direction=direction, error=repr(item))
+        return
+    message = item.message.model_dump(by_alias=True, mode="json", exclude_none=True)
+    log_event("debug", "jsonrpc_message", direction=direction, message=message)
+
+
+class _LoggingReceiveStream:
+    """Tee over the transport read stream: logs each inbound message, passes it through."""
+
+    def __init__(
+        self,
+        inner: MemoryObjectReceiveStream[SessionMessage | Exception],
+        direction: str,
+    ) -> None:
+        self._inner = inner
+        self._direction = direction
+
+    async def __aenter__(self) -> _LoggingReceiveStream:
+        await self._inner.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        return await self._inner.__aexit__(exc_type, exc, tb)
+
+    def __aiter__(self) -> _LoggingReceiveStream:
+        return self
+
+    async def __anext__(self) -> SessionMessage | Exception:
+        item = await self._inner.__anext__()
+        _log_jsonrpc(self._direction, item)
+        return item
+
+
+class _LoggingSendStream:
+    """Tee over the transport write stream: logs each outbound message, forwards it."""
+
+    def __init__(
+        self,
+        inner: MemoryObjectSendStream[SessionMessage],
+        direction: str,
+    ) -> None:
+        self._inner = inner
+        self._direction = direction
+
+    async def __aenter__(self) -> _LoggingSendStream:
+        await self._inner.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        return await self._inner.__aexit__(exc_type, exc, tb)
+
+    async def send(self, item: SessionMessage) -> None:
+        _log_jsonrpc(self._direction, item)
+        await self._inner.send(item)
+
+
+def _install_jsonrpc_logging(mcp: FastMCP) -> None:
+    """Wrap the low-level ``run`` so every JSON-RPC message is tee'd to the log."""
+    original_run = mcp._mcp_server.run
+
+    async def run_with_logging(
+        read_stream: MemoryObjectReceiveStream[SessionMessage | Exception],
+        write_stream: MemoryObjectSendStream[SessionMessage],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        await original_run(
+            _LoggingReceiveStream(read_stream, "incoming"),  # type: ignore[arg-type]
+            _LoggingSendStream(write_stream, "outgoing"),  # type: ignore[arg-type]
+            *args,
+            **kwargs,
+        )
+
+    mcp._mcp_server.run = run_with_logging  # type: ignore[assignment,method-assign]
+
+
 def build_server(
     settings: Settings,
     manager: RepositoryManager | None = None,
@@ -242,6 +354,10 @@ def build_server(
     # remove the handlers so `get_capabilities()` does not include them.
     mcp._mcp_server.request_handlers.pop(ListPromptsRequest, None)
     mcp._mcp_server.request_handlers.pop(GetPromptRequest, None)
+
+    # Tee every JSON-RPC message to the structured log when DEBUG is enabled
+    # (design §8). Installed before tool registration; order is irrelevant.
+    _install_jsonrpc_logging(mcp)
 
     # Repository catalog as Resources — the LLM-discoverable list of valid
     # `repository` argument values (see docs/distribution.md and spec §3.x).

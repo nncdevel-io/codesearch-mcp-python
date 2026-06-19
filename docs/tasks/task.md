@@ -100,10 +100,10 @@
 | TASK-077 | ✅ | requirements §6.4 と operations.md に「実運用は数リポが現実的、超過時はMCPサーバ分割」を明記、examples/repos.toml に description 入り例 | TASK-076 |
 | TASK-078 | ✅ | examples/repos.tomlのremote例をHTTPSとSSHの両方が見えるよう1件ずつに整える | TASK-077 |
 | TASK-070 | ✅ | tool descriptionに「repositoryの有効値はresources/listから取得できる」旨を追記、llm_guidance/usage-for-llmに反映 | TASK-067 |
-| TASK-079 | ⏳ | DEBUG時にJSON-RPCメッセージを全文ログ出力するtee傍受ラッパーを実装する | TASK-027 |
-| TASK-080 | ⏳ | JSON-RPC傍受ラッパーをstdio/HTTP両トランスポートに配線する | TASK-079,TASK-026 |
-| TASK-081 | ⏳ | DEBUG時に出力されINFO時は出力されないことを端点間テストで検証する | TASK-080 |
-| TASK-082 | ⏳ | operations.mdにDEBUGログの有効化方法と注意を追記する | TASK-080 |
+| TASK-079 | ✅ | DEBUG時にJSON-RPCメッセージを全文ログ出力するtee傍受ラッパーを実装する | TASK-027 |
+| TASK-080 | ✅ | JSON-RPC傍受ラッパーをstdio/HTTP両トランスポートに配線する | TASK-079,TASK-026 |
+| TASK-081 | ✅ | DEBUG時に出力されINFO時は出力されないことを端点間テストで検証する | TASK-080 |
+| TASK-082 | ✅ | operations.mdにDEBUGログの有効化方法と注意を追記する | TASK-080 |
 
 ## タスク詳細（補足が必要な場合のみ）
 
