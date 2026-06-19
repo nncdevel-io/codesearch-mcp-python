@@ -122,4 +122,38 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
 | **P7** | トランスポート (stdio + Streamable HTTP / CLI フラグ)、両端点間テスト、README/運用手順整備 |
 | **P8** | 性能サニティ (大規模スモーク) + 要件/仕様チェックリスト自己レビュー |
 
-詳細タスクは本設計を入力として writing-plans で展開する。
+詳細タスクは本設計を入力として plan-tasks スキルで展開する。
+
+## 8. JSON-RPC メッセージのデバッグログ
+
+ログレベルが `DEBUG` のときに限り、MCP の JSON-RPC メッセージを
+全文ログ出力する（要件 §5.6）。実装方針は以下のとおり。
+
+### 8.1 傍受ポイント
+
+stdio と Streamable HTTP のどちらのトランスポートでも、メッセージは
+最終的に低レベル `Server.run(read_stream, write_stream, init)` の
+2 本のストリームを通る。ここを横断的な傍受点とする。
+
+- `build_server` で `mcp._mcp_server.run` をラップし、受信・送信の
+  両ストリームを「tee（傍受してそのまま流す）」ラッパーで包む
+- ASGI / Starlette ミドルウェアは HTTP 経路にしか効かず stdio を
+  覆えないため採用しない。公式 `mcp` SDK にメッセージ層の汎用
+  ミドルウェアは存在しない（mcp 1.27.1 で確認）
+
+### 8.2 ログ内容と方向
+
+- 受信ストリーム（クライアントからサーバー）と送信ストリーム
+  （サーバーからクライアント）を `direction` で区別する
+- 各 `JSONRPCMessage` を全文（`model_dump`）で `log_event` に渡す。
+  既存の `_redact_value` が秘密情報を秘匿する（要件 §5.4）
+- `logger.isEnabledFor(DEBUG)` でガードし、DEBUG 未満では直列化も
+  行わない（既定の `INFO` 運用に性能影響を与えない）
+
+### 8.3 配置とテスト
+
+- 傍受ラッパーは `server.py`（FastMCP 配線層）に置く。既存コードも
+  `_mcp_server`（`version` 設定、`request_handlers` 操作）に手を
+  入れており、層間依存契約（`.importlinter`）に違反しない
+- tee ラッパーは in-memory ストリームで単体テストし、カバレッジ
+  100 パーセントを維持する
