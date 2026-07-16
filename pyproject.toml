@@ -7,7 +7,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "codesearch-mcp" }]
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.28.1",
     "pydantic>=2.6",
     "anyio>=4.3",
 ]
