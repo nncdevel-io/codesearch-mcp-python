@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mcp.shared.memory import create_connected_server_and_client_session
+import pytest
+from mcp import Client, MCPError
 
 from codesearch_mcp.config.models import RepositoryConfig, Settings
 from codesearch_mcp.giturl import Hosting
@@ -48,8 +49,7 @@ def _settings(tmp_path: Path) -> tuple[Settings, RepositoryManager, Path]:
 async def test_lists_five_tools(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         tools = await client.list_tools()
         names = {t.name for t in tools.tools}
         assert names == {
@@ -64,14 +64,13 @@ async def test_lists_five_tools(tmp_path: Path) -> None:
 async def test_search_code_via_mcp(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "search_code",
             {"pattern": "needle", "repository": "alpha"},
         )
-        assert result.isError is False
-        payload = result.structuredContent or json.loads(result.content[0].text)
+        assert result.is_error is False
+        payload = result.structured_content or json.loads(result.content[0].text)
         assert payload["total_matches"] >= 1
         paths = {m["file_path"] for m in payload["matches"]}
         assert "src/a.py" in paths
@@ -80,14 +79,13 @@ async def test_search_code_via_mcp(tmp_path: Path) -> None:
 async def test_read_file_via_mcp(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "read_file",
             {"repository": "alpha", "file_path": "README.md"},
         )
-        assert result.isError is False
-        payload = result.structuredContent or json.loads(result.content[0].text)
+        assert result.is_error is False
+        payload = result.structured_content or json.loads(result.content[0].text)
         assert payload["total_lines"] == 1
         assert payload["content"].endswith("# title\n")
 
@@ -95,13 +93,12 @@ async def test_read_file_via_mcp(tmp_path: Path) -> None:
 async def test_invalid_path_returns_isError(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "read_file",
             {"repository": "alpha", "file_path": "../escape"},
         )
-        assert result.isError is True
+        assert result.is_error is True
         body = json.loads(result.content[0].text)
         assert body["code"] == "INVALID_PATH"
 
@@ -109,13 +106,12 @@ async def test_invalid_path_returns_isError(tmp_path: Path) -> None:
 async def test_invalid_repo_returns_isError(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "list_tree",
             {"repository": "missing"},
         )
-        assert result.isError is True
+        assert result.is_error is True
         body = json.loads(result.content[0].text)
         assert body["code"] == "REPO_NOT_FOUND"
 
@@ -123,14 +119,13 @@ async def test_invalid_repo_returns_isError(tmp_path: Path) -> None:
 async def test_list_tree_via_mcp(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "list_tree",
             {"repository": "alpha", "max_depth": 3},
         )
-        assert result.isError is False
-        payload = result.structuredContent or json.loads(result.content[0].text)
+        assert result.is_error is False
+        payload = result.structured_content or json.loads(result.content[0].text)
         assert "README.md" in payload["tree"]
         assert payload["entry_count"] >= 2
 
@@ -138,13 +133,36 @@ async def test_list_tree_via_mcp(tmp_path: Path) -> None:
 async def test_list_files_via_mcp(tmp_path: Path) -> None:
     settings, mgr, _ = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.call_tool(
             "list_files",
             {"repository": "alpha", "pattern": "**/*.py"},
         )
-        assert result.isError is False
-        payload = result.structuredContent or json.loads(result.content[0].text)
+        assert result.is_error is False
+        payload = result.structured_content or json.loads(result.content[0].text)
         paths = sorted(f["file_path"] for f in payload["files"])
         assert paths == ["src/a.py", "src/b.py"]
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_unknown_tool_returns_protocol_error(tmp_path: Path, mode: str) -> None:
+    """MCP spec (Tools > Error Handling): an unknown tool is a protocol error
+    (JSON-RPC -32602), not a tool execution error with ``isError``."""
+    settings, mgr, _ = _settings(tmp_path)
+    server = build_server(settings, mgr)
+    async with Client(server, mode=mode) as client:
+        with pytest.raises(MCPError) as ei:
+            await client.call_tool("no_such_tool", {})
+    assert ei.value.error.code == -32602
+    assert ei.value.error.message == "Unknown tool: no_such_tool"
+
+
+async def test_invalid_arguments_return_tool_execution_error(tmp_path: Path) -> None:
+    """MCP spec (Tools > Error Handling): input validation errors are tool
+    execution errors reported with ``isError: true``."""
+    settings, mgr, _ = _settings(tmp_path)
+    server = build_server(settings, mgr)
+    async with Client(server, mode="legacy") as client:
+        result = await client.call_tool("search_code", {"repository": "alpha"})
+    assert result.is_error is True
+    assert "pattern" in result.content[0].text

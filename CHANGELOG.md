@@ -10,6 +10,8 @@ recorded here. Internal refactoring is omitted.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - `list_repositories` tool (5th tool) exposing the configured repository
@@ -36,6 +38,18 @@ recorded here. Internal refactoring is omitted.
   `codesearch_mcp.__version__` instead of the MCP SDK version.
 - `capabilities.prompts` is no longer advertised (Spec §2.2 requires only
   `tools` and `resources`).
+- Upgraded the MCP Python SDK to 2.x (`mcp>=2.3,<3`). The server now also
+  serves the 2026-07-28 protocol revision (`server/discover`, per-request
+  Streamable HTTP) in addition to the `initialize` handshake.
+- Verified on Python 3.11 through 3.15 (`requires-python` stays `>=3.11`).
+- `tools/call` with an unknown tool name now returns a JSON-RPC protocol
+  error (`-32602`, `Unknown tool: <name>`) instead of an `isError` tool
+  result, as the MCP spec requires. Argument validation failures remain
+  `isError` tool results (Spec §5.4).
+- `search_code`'s `outputSchema` now declares `"type": "object"` at the
+  root, as MCP requires.
+- `resources.subscribe` and `listChanged` are advertised as `false`: the
+  server emits no change notifications.
 
 ### Removed
 

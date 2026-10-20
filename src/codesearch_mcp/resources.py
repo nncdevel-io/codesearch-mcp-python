@@ -15,9 +15,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.resources import FunctionResource
-from pydantic import AnyUrl
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.resources import FunctionResource
 
 from .config.models import Settings
 from .observability import sync_status_report
@@ -63,7 +62,7 @@ def repository_catalog(manager: RepositoryManager) -> list[dict[str, Any]]:
 
 
 def register_repository_resources(
-    mcp: FastMCP,
+    mcp: MCPServer,
     settings: Settings,
     manager: RepositoryManager,
 ) -> None:
@@ -96,7 +95,7 @@ def register_repository_resources(
             )
 
         resource = FunctionResource(
-            uri=AnyUrl(repo_uri(rid)),
+            uri=repo_uri(rid),
             name=f"Repository: {rid}",
             title=rid,
             description=advertised_description,
