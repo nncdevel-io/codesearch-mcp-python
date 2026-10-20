@@ -657,7 +657,7 @@ codesearch://repo/{id}
   `exclude_paths` / `description` / `refresh_interval_seconds` フィールドは
   起動中は不変。セッション内キャッシュ可能。
 - **公開リソースに該当しない URI を `resources/read` した場合は MCP
-  プロトコル層の error 応答** (`McpError`、メッセージ
+  プロトコル層の error 応答** (JSON-RPC の error。Python SDK では `MCPError`、メッセージ
   `"Unknown resource: <uri>"`) として返す。これはツール側エラー
   (§5.2 の `isError + JSON 文字列` 形式) とは別軸の応答であり、
   `{code,message,details}` 形式は適用されない。クライアントは
@@ -701,7 +701,7 @@ MCP プロトコルに従い、エラーは tool result の `isError: true`
 `isError: true` + content の JSON 文字列として返す。
 
 `resources/read` で未知の URI を渡された場合のエラーは別軸 (MCP
-プロトコル層の `McpError`)。§4.6.5 を参照。
+プロトコル層の JSON-RPC error)。§4.6.5 を参照。
 
 ### 5.3 エラーメッセージの規約
 
@@ -712,10 +712,20 @@ MCP プロトコルに従い、エラーは tool result の `isError: true`
 
 ### 5.4 入力バリデーションエラー
 
-JSON Schema 違反 (型不一致、必須項目欠落、enum 範囲外、
-最小値・最大値違反など) は MCP プロトコル層で
-`-32602 Invalid params` として返却される。
-ツール側のエラーコード体系は適用しない。
+MCP 仕様（Tools の Error Handling）の区分に従う。
+
+- 引数の JSON Schema 違反（型不一致、必須項目欠落、enum 範囲外、
+  最小値・最大値違反など）は**ツール実行エラー**として、
+  `isError: true` のツール結果で返す。`content` のテキストは
+  SDK が生成する検証エラーの説明文であり、§5.1 の
+  `{code,message,details}` 形式は適用しない
+- 公開していないツール名を指定した `tools/call` は**プロトコル
+  エラー**として、JSON-RPC の error（`-32602`、メッセージ
+  `"Unknown tool: <name>"`）で返す
+- `tools/call` リクエスト自体が MCP スキーマを満たさない場合も
+  プロトコルエラーとする
+
+参照: <https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling>
 
 ## 6. Git URL 生成仕様
 

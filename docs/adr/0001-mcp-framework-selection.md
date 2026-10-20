@@ -7,6 +7,10 @@ Accepted
 - 当初決定: 2026-05-19 (`docs/design/design.md` §1 表に確定済み)
 - 本 ADR としての記録: 2026-05-21 (遡及記録、PYSEC-2025-183 対応に伴い
   選定理由を明文化)
+- 追記: 2026-10-20 に `mcp` を 1.x から 2.x（2.3.0）へ更新した。
+  2.x では SDK 同梱の FastMCP が `MCPServer`（`mcp.server.mcpserver`）に
+  改名されている。公式 `mcp` SDK を使うという決定は変わらないため、
+  本文中の「FastMCP」は 2.x では `MCPServer` と読み替える
 
 ## 結論サマリ
 
@@ -175,6 +179,13 @@ audit: ## pip-audit dependency vulnerability scan
         # a transitive dep via mcp (not used directly by this project).
         $(UV) run pip-audit --skip-editable --ignore-vuln PYSEC-2025-183
 ```
+
+### 除外の解除（2026-10-20）
+
+`Makefile` の `--ignore-vuln PYSEC-2025-183` を外した。
+OSV の当該エントリは影響範囲の上限（Last Affected）を `pyjwt 2.10.1` としており、
+`mcp` 2.3.0 の更新で入った `pyjwt 2.15.1` は対象外である。
+除外なしの `pip-audit` で脆弱性が検出されないことを確認した。
 
 ### レビュー条件 (この `--ignore-vuln` を外す契機)
 
