@@ -16,7 +16,7 @@
 > 引用は Git URL (行アンカー付き) で即貼り付け。
 
 [![verify](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml/badge.svg)](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml)
-[![version](https://img.shields.io/badge/version-v0.1.1-blue.svg)](pyproject.toml)
+[![version](https://img.shields.io/badge/version-v0.2.0-blue.svg)](pyproject.toml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](#-ライセンス)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -185,16 +185,13 @@ OpenCode では HTTP MCP は `type: "remote"` で指定する
 #### 🐍 Python `mcp` SDK (自前エージェント)
 
 ```python
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp import Client
 
-async with streamablehttp_client("http://127.0.0.1:8000/mcp/") as (r, w, _):
-    async with ClientSession(r, w) as session:
-        await session.initialize()
-        result = await session.call_tool(
-            "search_code",
-            {"pattern": "class\\s+StreamingResponseBuilder", "repository": "codesearch-mcp-python"},
-        )
+async with Client("http://127.0.0.1:8000/mcp/") as client:
+    result = await client.call_tool(
+        "search_code",
+        {"pattern": "class\\s+StreamingResponseBuilder", "repository": "codesearch-mcp-python"},
+    )
 ```
 
 > 🧪 個人開発で **stdio** で立ち上げてクライアント直結したい場合は
@@ -249,7 +246,7 @@ uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \
 | 📦 `FILE_TOO_LARGE` / `FILE_BINARY` | `read_file` の対象が読み取れない |
 | ⏱️ `TIMEOUT` | サーバ側タイムアウト超過 |
 
-入力スキーマ違反は MCP プロトコル層で `-32602 Invalid params` となる。
+入力スキーマ違反は `isError: true` のツール結果 (説明文は SDK が生成)、未知のツール名は JSON-RPC の `-32602` エラーとなる (MCP 仕様準拠、`docs/spec/spec.md` §5.4)。
 全コード一覧は [`docs/spec/spec.md`](docs/spec/spec.md) §5.2。
 
 ---

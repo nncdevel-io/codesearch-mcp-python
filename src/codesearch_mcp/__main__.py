@@ -22,7 +22,7 @@ from .repo.git_sync import sync_many
 from .repo.manager import RepositoryManager
 from .repo.notify import notify_serve_if_running, remove_serve_pid, write_serve_pid
 from .repo.scheduler import SyncScheduler
-from .server import build_server
+from .server import build_server, build_transport_security
 
 
 def _add_config_args(parser: argparse.ArgumentParser) -> None:
@@ -135,7 +135,7 @@ async def _run_serve(settings: Settings, server_cfg: ServerConfig) -> int:
         repositories=manager.ids(),
         scheduler=server_cfg.enable_scheduler,
     )
-    server = build_server(settings, manager, host=server_cfg.host, port=server_cfg.port)
+    server = build_server(settings, manager)
 
     scheduler = SyncScheduler(manager, settings) if server_cfg.enable_scheduler else None
     if scheduler:
@@ -144,8 +144,11 @@ async def _run_serve(settings: Settings, server_cfg: ServerConfig) -> int:
         if server_cfg.transport.value == "stdio":
             await server.run_stdio_async()
         else:
-            # FastMCP exposes Streamable HTTP via run_streamable_http_async.
-            await server.run_streamable_http_async()
+            await server.run_streamable_http_async(
+                host=server_cfg.host,
+                port=server_cfg.port,
+                transport_security=build_transport_security(server_cfg.host),
+            )
     finally:
         if scheduler:
             await scheduler.stop()
@@ -218,7 +221,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"config error: {err}\n")
         return 2
     parser.error(f"unknown command: {args.command}")
-    return 2
 
 
 def sync_main(argv: list[str] | None = None) -> int:

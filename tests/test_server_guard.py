@@ -109,7 +109,7 @@ async def test_dispatch_wraps_unhandled_exception_as_internal_error() -> None:
 
     result = await _dispatch(guard, "search_code", boom)
     # ``_dispatch`` returns an isError CallToolResult on the error path.
-    assert result.isError is True
+    assert result.is_error is True
     body = result.content[0].text
     assert "INTERNAL_ERROR" in body
 
@@ -117,7 +117,7 @@ async def test_dispatch_wraps_unhandled_exception_as_internal_error() -> None:
 async def test_to_is_error_round_trip() -> None:
     err = ToolError(ErrorCode.INVALID_PATH, "bad", {"path": "/x"})
     result = _to_is_error(err)
-    assert result.isError is True
+    assert result.is_error is True
     assert "INVALID_PATH" in result.content[0].text
 
 

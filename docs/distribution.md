@@ -90,7 +90,7 @@ PyPI 公開を後付けで足すことは可能だが、それを「補助的な
 
 ### 単一の真実: `src/codesearch_mcp/__init__.py`
 
-バージョン値は `__version__` に 1 か所だけ書く。FastMCP の
+バージョン値は `__version__` に 1 か所だけ書く。`MCPServer` の
 `serverInfo.version` (`initialize` 応答) と `pyproject.toml` の
 `project.version` は同じ値を保つ。
 
