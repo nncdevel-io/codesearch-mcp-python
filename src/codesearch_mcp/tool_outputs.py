@@ -1,7 +1,7 @@
 """Pydantic output models for the MCP tools.
 
 These mirror the per-tool outputSchema definitions in
-``docs/spec/spec.md`` §4.x and are attached to each FastMCP tool so that the
+``docs/spec/spec.md`` §4.x and are attached to each MCPServer tool so that the
 spec is also advertised at runtime via ``tools/list``.
 
 Why this is its own module: each model is a verbatim transcription of the
@@ -84,6 +84,11 @@ class SearchCodeOutput(
     RootModel[SearchContentOutput | SearchFilesWithMatchesOutput | SearchCountOutput]
 ):
     """Discriminated union covering the three search_code response shapes."""
+
+    # MCP requires `Tool.outputSchema` to declare `"type": "object"` at the
+    # root (mcp 2.x rejects a `tools/list` result without it). Every branch of
+    # the union is an object, so the added root keyword changes no semantics.
+    model_config = ConfigDict(json_schema_extra={"type": "object"})
 
 
 # --- list_files --------------------------------------------------------------

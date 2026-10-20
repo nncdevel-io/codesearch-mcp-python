@@ -1,153 +1,72 @@
-"""Tests for DEBUG-level JSON-RPC message logging (TASK-079..081)."""
+"""Tests for DEBUG-level JSON-RPC message logging (design §8)."""
 
 from __future__ import annotations
 
 import io
 import json
 import logging as stdlib_logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
-import anyio
-from mcp.shared.memory import create_connected_server_and_client_session
-from mcp.shared.message import SessionMessage
-from mcp.types import JSONRPCMessage, JSONRPCRequest
+import pytest
+from mcp import Client, MCPError, types
 
 from codesearch_mcp.config.models import RepositoryConfig, Settings
 from codesearch_mcp.giturl import Hosting
 from codesearch_mcp.logging import JsonFormatter, get_logger
 from codesearch_mcp.repo.manager import RepositoryManager
-from codesearch_mcp.server import (
-    _log_jsonrpc,
-    _LoggingReceiveStream,
-    _LoggingSendStream,
-    build_server,
-)
+from codesearch_mcp.server import _dump_result, _log_jsonrpc, build_server
 
 
-def _capture(logger: stdlib_logging.Logger) -> tuple[io.StringIO, stdlib_logging.Handler]:
+@contextmanager
+def _captured_log(level: int) -> Iterator[io.StringIO]:
+    logger = get_logger()
+    prev = logger.level
+    logger.setLevel(level)
     buf = io.StringIO()
     handler = stdlib_logging.StreamHandler(buf)
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
-    return buf, handler
+    try:
+        yield buf
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
 
 
-def _request(method: str = "ping", params: dict | None = None) -> SessionMessage:
-    req = JSONRPCRequest(jsonrpc="2.0", id=1, method=method, params=params)
-    return SessionMessage(message=JSONRPCMessage(req))
-
-
-def _events(buf: io.StringIO) -> list[dict]:
+def _jsonrpc_events(buf: io.StringIO) -> list[dict]:
     lines = [ln for ln in buf.getvalue().strip().splitlines() if ln.strip()]
-    return [json.loads(ln) for ln in lines]
-
-
-def test_log_jsonrpc_emits_full_message_at_debug() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    try:
-        _log_jsonrpc("incoming", _request("tools/call"))
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    evt = [e for e in _events(buf) if e["ctx"]["event"] == "jsonrpc_message"]
-    assert evt, "expected a jsonrpc_message event"
-    assert evt[0]["ctx"]["direction"] == "incoming"
-    assert evt[0]["ctx"]["message"]["method"] == "tools/call"
-
-
-def test_log_jsonrpc_suppressed_below_debug() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.INFO)
-    buf, handler = _capture(logger)
-    try:
-        _log_jsonrpc("incoming", _request())
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    assert "jsonrpc_message" not in buf.getvalue()
-
-
-def test_log_jsonrpc_handles_exception_item() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    try:
-        _log_jsonrpc("incoming", ValueError("boom"))
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    evt = [e for e in _events(buf) if e["ctx"]["event"] == "jsonrpc_message"]
-    assert "boom" in evt[0]["ctx"]["error"]
+    events = [json.loads(ln) for ln in lines]
+    return [e["ctx"] for e in events if e.get("ctx", {}).get("event") == "jsonrpc_message"]
 
 
 def test_log_jsonrpc_redacts_secrets() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    try:
-        msg = _request(
-            "tools/call",
-            {"name": "search_code", "arguments": {"pattern": "token=abc123"}},
+    with _captured_log(stdlib_logging.DEBUG) as buf:
+        _log_jsonrpc(
+            "incoming",
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "search_code", "arguments": {"pattern": "token=abc123"}},
+            },
         )
-        _log_jsonrpc("incoming", msg)
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
     body = buf.getvalue()
     assert "abc123" not in body
     assert "token=***" in body
 
 
-async def test_receive_stream_logs_and_passes_through() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    send, recv = anyio.create_memory_object_stream(8)
-    wrapped = _LoggingReceiveStream(recv, "incoming")
-    msg = _request("ping")
-    try:
-        async with send:
-            await send.send(msg)
-        received: list[object] = []
-        async with wrapped:
-            async for item in wrapped:
-                received.append(item)
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    assert received == [msg]
-    evt = [e for e in _events(buf) if e["ctx"]["event"] == "jsonrpc_message"]
-    assert evt and evt[0]["ctx"]["direction"] == "incoming"
+def test_dump_result_maps_dict_and_none_to_wire_result() -> None:
+    assert _dump_result({"tools": []}) == {"tools": []}
+    assert _dump_result(None) == {}
 
 
-async def test_send_stream_logs_and_forwards() -> None:
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    send, recv = anyio.create_memory_object_stream(8)
-    wrapped = _LoggingSendStream(send, "outgoing")
-    msg = _request("pong")
-    try:
-        async with wrapped:
-            await wrapped.send(msg)
-        got: list[object] = []
-        async with recv:
-            async for item in recv:
-                got.append(item)
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    assert got == [msg]
-    evt = [e for e in _events(buf) if e["ctx"]["event"] == "jsonrpc_message"]
-    assert evt and evt[0]["ctx"]["direction"] == "outgoing"
+def test_dump_result_serializes_model_with_wire_aliases() -> None:
+    result = types.CallToolResult(is_error=True, content=[])
+    dumped = _dump_result(result)
+    assert dumped["isError"] is True
+    assert "is_error" not in dumped
 
 
 def _minimal(tmp_path: Path) -> tuple[Settings, RepositoryManager]:
@@ -166,36 +85,50 @@ def _minimal(tmp_path: Path) -> tuple[Settings, RepositoryManager]:
     return settings, RepositoryManager(settings)
 
 
-async def test_jsonrpc_logged_both_directions_at_debug(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_request_and_response_logged_at_debug(tmp_path: Path, mode: str) -> None:
     settings, mgr = _minimal(tmp_path)
     server = build_server(settings, mgr)
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.DEBUG)
-    buf, handler = _capture(logger)
-    try:
-        async with create_connected_server_and_client_session(server) as client:
-            await client.initialize()
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
-    jl = [e for e in _events(buf) if e.get("ctx", {}).get("event") == "jsonrpc_message"]
-    directions = {e["ctx"]["direction"] for e in jl}
-    assert "incoming" in directions
-    assert "outgoing" in directions
+    with _captured_log(stdlib_logging.DEBUG) as buf:
+        async with Client(server, mode=mode) as client:
+            await client.list_tools()
+    events = _jsonrpc_events(buf)
+    incoming = [e["message"] for e in events if e["direction"] == "incoming"]
+    outgoing = [e["message"] for e in events if e["direction"] == "outgoing"]
+    request = next(m for m in incoming if m["method"] == "tools/list")
+    response = next(m for m in outgoing if m["id"] == request["id"])
+    assert {t["name"] for t in response["result"]["tools"]} >= {"search_code", "read_file"}
+
+
+async def test_notification_logged_without_response(tmp_path: Path) -> None:
+    settings, mgr = _minimal(tmp_path)
+    server = build_server(settings, mgr)
+    with _captured_log(stdlib_logging.DEBUG) as buf:
+        async with Client(server, mode="legacy"):
+            pass
+    events = _jsonrpc_events(buf)
+    notification = next(
+        e["message"] for e in events if e["message"].get("method") == "notifications/initialized"
+    )
+    assert "id" not in notification
+    assert all("id" in e["message"] for e in events if e["direction"] == "outgoing")
+
+
+async def test_failed_request_logs_error_response(tmp_path: Path) -> None:
+    settings, mgr = _minimal(tmp_path)
+    server = build_server(settings, mgr)
+    with _captured_log(stdlib_logging.DEBUG) as buf:
+        async with Client(server, mode="legacy") as client:
+            with pytest.raises(MCPError):
+                await client.read_resource("codesearch://repo/does-not-exist")
+    outgoing = [e["message"] for e in _jsonrpc_events(buf) if e["direction"] == "outgoing"]
+    assert any("Unknown resource" in m.get("error", "") for m in outgoing)
 
 
 async def test_jsonrpc_not_logged_at_info(tmp_path: Path) -> None:
     settings, mgr = _minimal(tmp_path)
     server = build_server(settings, mgr)
-    logger = get_logger()
-    prev = logger.level
-    logger.setLevel(stdlib_logging.INFO)
-    buf, handler = _capture(logger)
-    try:
-        async with create_connected_server_and_client_session(server) as client:
-            await client.initialize()
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(prev)
+    with _captured_log(stdlib_logging.INFO) as buf:
+        async with Client(server, mode="legacy") as client:
+            await client.list_tools()
     assert "jsonrpc_message" not in buf.getvalue()

@@ -79,8 +79,8 @@ the failure modes Python invites.
   `uv.lock` and breaks reproducibility.
 - **Public functions must be typed.** Pyrefly runs in strict mode on `src/`
   with `unannotated-parameter` / `unannotated-return` / `unannotated-attribute`
-  as errors. Use precise types, not bare `Any`, except for FastMCP-registered
-  tool callbacks where `Any` is required so FastMCP does not auto-infer an
+  as errors. Use precise types, not bare `Any`, except for MCPServer-registered
+  tool callbacks where `Any` is required so MCPServer does not auto-infer an
   output schema.
 - **No I/O at module import time.** import-linter and the implicit
   `pytest --collect-only` step both fail if importing a module performs
@@ -116,7 +116,7 @@ contract is enforced by `.importlinter`):
   optional `scheduler`
 - `tools/` — one module per MCP tool (`search_code`, `list_files`,
   `list_tree`, `read_file`); they cannot import each other
-- `server.py` — FastMCP wiring, concurrency/timeout guard
+- `server.py` — MCPServer wiring, concurrency/timeout guard
 - `__main__.py` — CLI entry; `codesearch-mcp serve --transport stdio|http`
   and `codesearch-sync` are defined here
 
@@ -125,8 +125,9 @@ The essentials that span multiple files:
 - **Five MCP tools**: four search tools (`search_code`, `list_files`,
   `list_tree`, `read_file`) plus one discovery helper (`list_repositories`)
   for MCP hosts that do not surface Resources to the LLM. All exposed via the
-  official `mcp` SDK's FastMCP. The whole server is async; external commands
-  (`ripgrep`, `git`) run as shell-free subprocesses. Also publishes one MCP
+  official `mcp` SDK's `MCPServer` (mcp 2.x; formerly FastMCP). The whole
+  server is async; external commands (`ripgrep`, `git`) run as shell-free
+  subprocesses. Also publishes one MCP
   Resource per configured repository (`codesearch://repo/{id}`) so
   Resources-aware hosts can discover the catalog there.
 - **Git sync is decoupled from the request path** and deployment-agnostic.
@@ -136,8 +137,10 @@ The essentials that span multiple files:
   forbidden (would violate the 2s p95 / availability requirements).
 - **Error model**: domain failures raise `ToolError(code, message, details)`
   and are returned as an `isError` tool result whose content is the JSON
-  `{code,message,details}`; JSON-Schema input violations surface as MCP
-  `-32602` (let FastMCP/Pydantic produce these — do not hand-roll).
+  `{code,message,details}`. Following the MCP spec, JSON-Schema input
+  violations are tool execution errors (`isError`, text produced by
+  MCPServer/Pydantic — do not hand-roll), while an unknown tool name is a
+  protocol error (`-32602`, raised by the `reject_unknown_tool` middleware).
 - **Path safety**: every path argument goes through `pathsafe`
   (reject absolute / `..`, realpath-contain inside the repo workspace,
   `INVALID_PATH` / `PATH_NOT_FOUND`).
