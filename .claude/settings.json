@@ -52,10 +52,12 @@
       "Read(./.env.*)",
       "Read(~/.ssh/**)",
       "Read(./examples/secrets.toml)",
-      "Write(./secrets.toml)",
-      "Write(./.env)",
-      "Write(./.env.*)",
-      "Write(~/.ssh/**)"
+      "Read(!*.example)",
+      "Edit(./secrets.toml)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(~/.ssh/**)",
+      "Edit(!*.example)"
     ]
   }
 }
