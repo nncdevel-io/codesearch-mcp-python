@@ -32,7 +32,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15']
+        include:
+          # grimp (pulled in by import-linter) publishes no cp315 wheels yet,
+          # and building it from source needs rustc >= 1.94. The import
+          # contracts are static and version-independent, so they are checked
+          # on the other versions; 3.15 skips installing and running them.
+          - python-version: '3.15'
+            skip-imports: true
 
     steps:
       - uses: actions/checkout@v6
@@ -58,9 +65,23 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Sync dependencies (locked)
+        if: ${{ !matrix.skip-imports }}
         run: uv sync --frozen
 
+      - name: Sync dependencies (locked, without import-linter)
+        if: ${{ matrix.skip-imports }}
+        run: uv sync --frozen --no-install-package import-linter --no-install-package grimp
+
       - name: Run full verify pipeline
+        if: ${{ !matrix.skip-imports }}
         run: make verify
         env:
           NO_PROXY: 127.0.0.1,localhost
+
+      - name: Run verify pipeline without import contracts
+        if: ${{ matrix.skip-imports }}
+        # UV_NO_SYNC keeps `uv run` from re-installing the skipped packages.
+        run: make lint format-check types test audit md spell
+        env:
+          NO_PROXY: 127.0.0.1,localhost
+          UV_NO_SYNC: '1'

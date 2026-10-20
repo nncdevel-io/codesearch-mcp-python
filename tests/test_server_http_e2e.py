@@ -10,13 +10,12 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp import Client
 
 from codesearch_mcp.config.models import RepositoryConfig, Settings
 from codesearch_mcp.giturl import Hosting
 from codesearch_mcp.repo.manager import RepositoryManager
-from codesearch_mcp.server import build_server
+from codesearch_mcp.server import build_server, build_transport_security
 
 from .conftest import requires_git, requires_rg
 from .fixtures import init_working_tree
@@ -50,7 +49,7 @@ def _free_port() -> int:
 @asynccontextmanager
 async def _serve(server, host: str, port: int):
     config = uvicorn.Config(
-        server.streamable_http_app(),
+        server.streamable_http_app(host=host, transport_security=build_transport_security(host)),
         host=host,
         port=port,
         log_level="warning",
@@ -95,21 +94,19 @@ async def test_http_transport_search_code(tmp_path: Path) -> None:
     mgr = RepositoryManager(settings)
     mgr.mark_success("alpha", "x")
     port = _free_port()
-    server = build_server(settings, mgr, host="127.0.0.1", port=port)
-    url = f"http://127.0.0.1:{port}/mcp/"
+    server = build_server(settings, mgr)
+    url = f"http://127.0.0.1:{port}/mcp"
 
     async with _serve(server, "127.0.0.1", port):
-        async with streamablehttp_client(url) as (reader, writer, _get_id):
-            async with ClientSession(reader, writer) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                names = {t.name for t in tools.tools}
-                assert {"search_code", "list_files", "list_tree", "read_file"} <= names
-                result = await session.call_tool(
-                    "search_code",
-                    {"pattern": "needle", "repository": "alpha"},
-                )
-                assert result.isError is False
-                payload = result.structuredContent or json.loads(result.content[0].text)
-                paths = {m["file_path"] for m in payload["matches"]}
-                assert "src/a.py" in paths
+        async with Client(url) as client:
+            tools = await client.list_tools()
+            names = {t.name for t in tools.tools}
+            assert {"search_code", "list_files", "list_tree", "read_file"} <= names
+            result = await client.call_tool(
+                "search_code",
+                {"pattern": "needle", "repository": "alpha"},
+            )
+            assert result.is_error is False
+            payload = result.structured_content or json.loads(result.content[0].text)
+            paths = {m["file_path"] for m in payload["matches"]}
+            assert "src/a.py" in paths

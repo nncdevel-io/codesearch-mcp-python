@@ -13,7 +13,7 @@
 | 完成範囲 | 全機能を段階的に完成 (P0〜P8) | 利用者選択 |
 | 設計の扱い | アーキテクチャ設計のみ本書に記し、詳細設計は各 TDD タスク内 | 利用者選択 |
 | テスト | TDD (テスト先行)。単体 + 結合 | 利用者選択 |
-| MCP フレームワーク | 公式 `mcp` Python SDK (FastMCP) | MCP 仕様準拠と stdio/Streamable HTTP 両対応の要件上、唯一の妥当解 |
+| MCP フレームワーク | 公式 `mcp` Python SDK 2.x (`MCPServer`) | MCP 仕様準拠と stdio/Streamable HTTP 両対応の要件上、唯一の妥当解 |
 | 並行モデル | 全体 async。外部コマンドは `asyncio.create_subprocess_exec` | シェル非経由でインジェクション耐性、並列走査の利得 |
 | Git 同期 | リクエストパスから完全分離。デプロイ非依存 | 利用者選択。要件 5.1/5.2 と整合 |
 | スケジューラ | 素の asyncio ループ。任意コンポーネント (ON/OFF) | 固定間隔更新に APScheduler 等は YAGNI |
@@ -66,14 +66,15 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
 | `pathsafe.py` | 相対パス検証 (絶対 / `..` 拒否、realpath 封じ込め) → `INVALID_PATH` / `PATH_NOT_FOUND` |
 | `giturl.py` | hosting 別 URL 生成 (github/gitlab/bitbucket/gitea、単一・範囲、URL エンコード規則) |
 | `errors.py` | エラーコード、`{code,message,details}` 直列化、`isError` 結果。秘密情報・スタックトレース非出力 |
-| `server.py` | FastMCP アプリ、5 ツール (4 検索 + `list_repositories`) 登録、`capabilities.prompts` 抑止、Resources 登録、並列セマフォ(16)、ツール別タイムアウト、全体 30 秒 |
+| `server.py` | `MCPServer` アプリ、5 ツール (4 検索 + `list_repositories`) 登録、`capabilities.prompts` 抑止、`subscriptions/listen` 無効化 (変更通知を出さないため)、未知ツールの `-32602` 拒否 (MCP 仕様準拠)、Resources 登録、HTTP の DNS リバインディング保護設定 (`build_transport_security`、起動時に渡す)、並列セマフォ(16)、ツール別タイムアウト、全体 30 秒 |
 | `logging.py` | 構造化ログ、秘密情報秘匿 |
 | `observability.py` | 各リポジトリの最終同期時刻・結果の参照 |
 
 ## 4. データフロー (ツール呼び出し)
 
-1. トランスポートが `tools/call` 受信 → FastMCP が inputSchema
-   検証 (違反は `-32602 Invalid params`)
+1. トランスポートが `tools/call` 受信 → 未知のツール名は
+   ミドルウェアが `-32602` で拒否。`MCPServer` が inputSchema を
+   検証し、違反は `isError: true` のツール結果で返す (spec §5.4)
 2. サーバラッパ: 並列セマフォ取得 (上限 16。キュー待ち+実行が
    30 秒超で `TIMEOUT`)、ツール別タイムアウト開始
    (search 10s / list_files 5s / list_tree 5s / read_file 3s)
@@ -103,7 +104,7 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
   rg argv・JSON パース / list_tree 整形 (深さ・件数・整列・罫線) /
   read_file 行番号・binary・サイズ / config 検証 / エラー直列化
 - **結合**: 一時 git リポジトリ (及びローカル bare を "remote"
-  扱い) を fixture 化し、FastMCP インメモリクライアントで各
+  扱い) を fixture 化し、SDK の `Client` (インプロセス接続) で各
   ツールと同期 (CLI 経路含む) を端点間検証。`rg`/`git` 必須、
   無ければ明示スキップ
 - 各単位は red → green → refactor
@@ -122,4 +123,50 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
 | **P7** | トランスポート (stdio + Streamable HTTP / CLI フラグ)、両端点間テスト、README/運用手順整備 |
 | **P8** | 性能サニティ (大規模スモーク) + 要件/仕様チェックリスト自己レビュー |
 
-詳細タスクは本設計を入力として writing-plans で展開する。
+詳細タスクは本設計を入力として plan-tasks スキルで展開する。
+
+## 8. JSON-RPC メッセージのデバッグログ
+
+ログレベルが `DEBUG` のときに限り、MCP の JSON-RPC メッセージを
+全文ログ出力する（要件 §5.6）。実装方針は以下のとおり。
+
+### 8.1 傍受ポイント
+
+SDK の `ServerMiddleware`（`MCPServer(middleware=...)`）を傍受点とする。
+このミドルウェアは、stdio、Streamable HTTP（ハンドシェイク方式と
+リクエストごとの方式の両方）、インプロセス接続のすべてで、
+クライアントから届くリクエストと通知を包む。
+
+- `build_server` で `MCPServer` にログ用ミドルウェアを 1 つ渡す。
+  ミドルウェアは受信メッセージを記録し、後続の処理を呼び、
+  その結果（または例外）を応答として記録する
+- mcp 1.x で使っていた `Server.run` のストリームを包む方式は採用しない。
+  mcp 2.x の Streamable HTTP は `Server.run` を通らないため、
+  HTTP 経路のメッセージを取りこぼす
+- ASGI / Starlette ミドルウェアは HTTP 経路にしか効かず stdio を
+  覆えないため採用しない
+- `ServerMiddleware` は SDK 上で「暫定（provisional）」と注記された
+  API である（mcp 2.3.0 で確認）。マイナーバージョンの更新で
+  シグネチャが変わる可能性がある
+
+### 8.2 ログ内容と方向
+
+- 受信（クライアントからサーバー）と送信（サーバーからクライアント）を
+  `direction` で区別する
+- 受信は `jsonrpc` / `id` / `method` / `params` を、送信は `jsonrpc` /
+  `id` / `result` を、JSON-RPC の形に組み立てて `log_event` に渡す。
+  既存の `_redact_value` が秘密情報を秘匿する（要件 §5.4）
+- 処理が例外で終わった場合は、送信側に `error`（例外の `repr`）を記録する
+- 通知（`id` を持たないメッセージ）は受信側だけを記録する
+- サーバーからクライアントへ自発的に送る通知とリクエストは記録しない。
+  本サーバーはそれらを送らないため、要件 §5.6 の範囲で欠落は生じない
+- `logger.isEnabledFor(DEBUG)` でガードし、DEBUG 未満では組み立ても
+  直列化も行わない（既定の `INFO` 運用に性能影響を与えない）
+
+### 8.3 配置とテスト
+
+- ログ用ミドルウェアは `server.py`（`MCPServer` 配線層）に置く。
+  層間依存契約（`.importlinter`）に違反しない
+- SDK の `Client` をインプロセス接続（`legacy` と `auto` の両モード）で
+  使い、リクエスト・応答・通知・エラー応答の記録を検証する。
+  カバレッジ 100 パーセントを維持する

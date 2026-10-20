@@ -1,17 +1,18 @@
-"""FastMCP server wiring with concurrency guard, per-tool timeouts, error handling."""
+"""MCPServer wiring with concurrency guard, per-tool timeouts, error handling."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from mcp import types
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
+from mcp import MCPError, types
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import CallToolResult, GetPromptRequest, ListPromptsRequest
+from pydantic import BaseModel
 
 from . import __version__
 from .config.models import Settings
@@ -39,29 +40,6 @@ from .tools.schemas import (
     SearchCodeInput,
 )
 from .tools.search_code import execute_search_code
-
-# --- FastMCP convert_result patch (TASK-066) --------------------------------
-#
-# FastMCP's `FuncMetadata.convert_result` validates `structuredContent`
-# against `output_model` unconditionally when `output_schema` is set. Our
-# error envelope (spec §5.1) returns CallToolResult with structuredContent=None
-# (the JSON `{code,message,details}` lives in content[0].text instead), and
-# validating None against the output model fails. We patch the method at the
-# class level once at import time so the None-structuredContent error path
-# bypasses validation while every other code path is untouched. Scope is
-# narrow: the patch only adds an early-return branch; CallToolResults with
-# real structuredContent and dict returns are validated exactly as before.
-
-_original_convert_result = FuncMetadata.convert_result
-
-
-def _convert_result_lenient_on_error(self: FuncMetadata, result: Any) -> Any:
-    if isinstance(result, CallToolResult) and result.structuredContent is None:
-        return result
-    return _original_convert_result(self, result)
-
-
-FuncMetadata.convert_result = _convert_result_lenient_on_error  # type: ignore[assignment,method-assign]
 
 MAX_CONCURRENT_TOOL_CALLS = 16
 QUEUE_TIMEOUT_SECONDS = 30.0
@@ -123,12 +101,12 @@ async def _async_repository_catalog(mgr: RepositoryManager) -> dict[str, Any]:
     return {"repositories": repository_catalog(mgr)}
 
 
-def _attach_output_schemas(mcp: FastMCP) -> None:
+def _attach_output_schemas(mcp: MCPServer) -> None:
     """Advertise per-tool outputSchema via FuncMetadata.
 
-    The class-level patch above (``_convert_result_lenient_on_error``) handles
-    the error CallToolResult path; here we just point each tool's metadata at
-    the corresponding Pydantic output model.
+    Error results (``is_error=True``, no structured content) skip output
+    validation inside the SDK's ``convert_result``, so only the success path
+    is checked against these models.
     """
 
     for tool_name, model in TOOL_OUTPUT_MODELS.items():
@@ -146,7 +124,7 @@ def _attach_output_schemas(mcp: FastMCP) -> None:
 
 def _to_is_error(err: ToolError) -> types.CallToolResult:
     return types.CallToolResult(
-        isError=True,
+        is_error=True,
         content=[types.TextContent(type="text", text=error_payload(err))],
     )
 
@@ -190,58 +168,140 @@ async def _dispatch(
     return result
 
 
+# --- JSON-RPC message debug logging (design §8) ----------------------------
+#
+# When the log level is DEBUG, every JSON-RPC exchange is logged in full. The
+# SDK's ``ServerMiddleware`` chain wraps every inbound request and
+# notification on every transport (stdio, Streamable HTTP in both the
+# handshake and the per-request era, in-process), so it is the one common
+# interception point. Teeing the ``Server.run`` streams no longer works:
+# Streamable HTTP bypasses ``Server.run`` in mcp 2.x. ASGI middleware would
+# only cover HTTP (not stdio). See design §8.1.
+
+
+def _log_jsonrpc(direction: str, message: dict[str, Any]) -> None:
+    """Log one JSON-RPC message at DEBUG, redacting secrets via the log layer.
+
+    ``direction`` is ``"incoming"`` (client → server) or ``"outgoing"``
+    (server → client).
+    """
+    log_event("debug", "jsonrpc_message", direction=direction, message=message)
+
+
+def _dump_result(result: HandlerResult) -> dict[str, Any]:
+    if isinstance(result, BaseModel):
+        return result.model_dump(by_alias=True, mode="json", exclude_none=True)
+    return result or {}
+
+
+async def _jsonrpc_logging_middleware(
+    ctx: ServerRequestContext[Any, Any],
+    call_next: CallNext,
+) -> HandlerResult:
+    """Log the inbound message and its response, then pass the result through.
+
+    Serialization is skipped entirely unless DEBUG is enabled so the default
+    INFO operation pays no cost. Notifications (``request_id is None``) have no
+    response, so only the inbound side is logged for them.
+    """
+    if not get_logger().isEnabledFor(logging.DEBUG):
+        return await call_next(ctx)
+    incoming: dict[str, Any] = {"jsonrpc": "2.0", "method": ctx.method}
+    if ctx.request_id is not None:
+        incoming["id"] = ctx.request_id
+    if ctx.params is not None:
+        incoming["params"] = dict(ctx.params)
+    _log_jsonrpc("incoming", incoming)
+    try:
+        result = await call_next(ctx)
+    except Exception as exc:
+        _log_jsonrpc("outgoing", {"jsonrpc": "2.0", "id": ctx.request_id, "error": repr(exc)})
+        raise
+    if ctx.request_id is not None:
+        _log_jsonrpc(
+            "outgoing",
+            {"jsonrpc": "2.0", "id": ctx.request_id, "result": _dump_result(result)},
+        )
+    return result
+
+
+def build_transport_security(host: str) -> TransportSecuritySettings:
+    """Build the DNS-rebinding protection settings for Streamable HTTP.
+
+    Args:
+        host: Bind host of the HTTP server; it is allowed (any port) alongside
+            loopback in both the ``Host`` and ``Origin`` allow-lists.
+
+    Returns:
+        Settings with DNS-rebinding protection enabled.
+    """
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "127.0.0.1",
+            "127.0.0.1:*",
+            "localhost",
+            "localhost:*",
+            host,
+            f"{host}:*",
+        ],
+        allowed_origins=[
+            "http://127.0.0.1",
+            "http://127.0.0.1:*",
+            "http://localhost",
+            "http://localhost:*",
+            f"http://{host}",
+            f"http://{host}:*",
+        ],
+    )
+
+
 def build_server(
     settings: Settings,
     manager: RepositoryManager | None = None,
-    *,
-    host: str = "127.0.0.1",
-    port: int = 8000,
-    allowed_hosts: list[str] | None = None,
-    allowed_origins: list[str] | None = None,
-) -> FastMCP:
-    """Create a configured FastMCP application that exposes the four tools."""
+) -> MCPServer:
+    """Create a configured MCPServer application that exposes the five tools.
+
+    HTTP bind address and transport security are not part of the server in
+    mcp 2.x; pass them to ``run_streamable_http_async`` /
+    ``streamable_http_app`` (see ``build_transport_security``).
+    """
 
     mgr = manager or RepositoryManager(settings)
     guard = ToolExecutionGuard()
-    default_hosts = [
-        "127.0.0.1",
-        "127.0.0.1:*",
-        "localhost",
-        "localhost:*",
-        host,
-        f"{host}:*",
-    ]
-    default_origins = [
-        "http://127.0.0.1",
-        "http://127.0.0.1:*",
-        "http://localhost",
-        "http://localhost:*",
-        f"http://{host}",
-        f"http://{host}:*",
-    ]
-    security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=allowed_hosts or default_hosts,
-        allowed_origins=allowed_origins or default_origins,
-    )
-    mcp = FastMCP(
+    # `subscriptions=False`: no list-changed or resource-update events are ever
+    # emitted, so `subscriptions/listen` must not be served — serving it makes
+    # the SDK advertise `listChanged` / `resources.subscribe` as true.
+
+    async def reject_unknown_tool(
+        ctx: ServerRequestContext[Any, Any],
+        call_next: CallNext,
+    ) -> HandlerResult:
+        # MCP spec (Tools > Error Handling) classifies an unknown tool as a
+        # protocol error (JSON-RPC -32602). MCPServer instead reports it as a
+        # tool execution error (`isError`), so reject it before dispatch.
+        name = (ctx.params or {}).get("name") if ctx.method == "tools/call" else None
+        if isinstance(name, str) and mcp._tool_manager.get_tool(name) is None:
+            raise MCPError(code=types.INVALID_PARAMS, message=f"Unknown tool: {name}")
+        return await call_next(ctx)
+
+    mcp = MCPServer(
         "codesearch-mcp",
         instructions=SERVER_INSTRUCTIONS,
-        host=host,
-        port=port,
-        transport_security=security,
+        version=__version__,
+        subscriptions=False,
+        # Logging is outermost so protocol errors raised by the inner
+        # middleware are logged too (design §8).
+        middleware=[_jsonrpc_logging_middleware, reject_unknown_tool],
     )
-    # FastMCP does not expose the underlying server's `version` as a kwarg, so
-    # we set it directly. Without this, `initialize` reports the MCP SDK's
-    # version instead of this project's, which misleads clients.
-    mcp._mcp_server.version = __version__
 
-    # FastMCP unconditionally registers prompts handlers, which makes
+    # MCPServer unconditionally registers prompts handlers, which makes
     # `capabilities.prompts` get advertised in `initialize` even though we
     # expose none. Spec §2.2 requires that we do not advertise prompts —
-    # remove the handlers so `get_capabilities()` does not include them.
-    mcp._mcp_server.request_handlers.pop(ListPromptsRequest, None)
-    mcp._mcp_server.request_handlers.pop(GetPromptRequest, None)
+    # remove the handlers so `get_capabilities()` does not include them. The
+    # SDK has no public API to unregister a handler, hence the private access.
+    mcp._lowlevel_server._request_handlers.pop("prompts/list", None)
+    mcp._lowlevel_server._request_handlers.pop("prompts/get", None)
 
     # Repository catalog as Resources — the LLM-discoverable list of valid
     # `repository` argument values (see docs/distribution.md and spec §3.x).

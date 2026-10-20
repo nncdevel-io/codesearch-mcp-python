@@ -91,9 +91,8 @@ def _parse_kv(pairs: list[str]) -> dict[str, Any]:
     return out
 
 
-async def _run_session(session: Any, args: argparse.Namespace) -> int:
-    await session.initialize()
-    tools = await session.list_tools()
+async def _run_probe(client: Any, args: argparse.Namespace) -> int:
+    tools = await client.list_tools()
     if args.list:
         print("Tools advertised:")
         for tool in tools.tools:
@@ -111,42 +110,37 @@ async def _run_session(session: Any, args: argparse.Namespace) -> int:
     if matching is None:
         advertised = ", ".join(t.name for t in tools.tools)
         print(
-            f"ERROR: tool {args.tool!r} not advertised by server. "
-            f"Advertised: {advertised}",
+            f"ERROR: tool {args.tool!r} not advertised by server. Advertised: {advertised}",
             file=sys.stderr,
         )
         return 2
 
     arguments = _parse_kv(args.arg)
     print(f"\nCalling {args.tool} with arguments: {arguments}")
-    result = await session.call_tool(args.tool, arguments)
-    print(f"isError: {result.isError}")
+    result = await client.call_tool(args.tool, arguments)
+    print(f"is_error: {result.is_error}")
     for block in result.content:
         text = getattr(block, "text", None)
         if text is not None:
             print(text)
-    return 1 if result.isError else 0
+    return 1 if result.is_error else 0
 
 
 async def _probe_http(url: str, args: argparse.Namespace) -> int:
-    from mcp.client.session import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp import Client
 
-    async with streamablehttp_client(url) as (reader, writer, _):
-        async with ClientSession(reader, writer) as session:
-            return await _run_session(session, args)
+    async with Client(url) as client:
+        return await _run_probe(client, args)
 
 
 async def _probe_stdio(command: list[str], args: argparse.Namespace) -> int:
-    from mcp.client.session import ClientSession
-    from mcp.client.stdio import StdioServerParameters, stdio_client
+    from mcp import Client, StdioServerParameters
 
     if not command:
         raise SystemExit("--stdio requires a command after '--'")
     params = StdioServerParameters(command=command[0], args=command[1:])
-    async with stdio_client(params) as (reader, writer):
-        async with ClientSession(reader, writer) as session:
-            return await _run_session(session, args)
+    async with Client(params) as client:
+        return await _run_probe(client, args)
 
 
 def main() -> int:
