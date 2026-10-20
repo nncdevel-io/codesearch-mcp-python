@@ -1,13 +1,13 @@
 [project]
 name = "codesearch-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "Model Context Protocol server for searching Git-managed source code"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "codesearch-mcp" }]
 dependencies = [
-    "mcp>=1.28.1",
+    "mcp>=2.3,<3",
     "pydantic>=2.6",
     "anyio>=4.3",
 ]
