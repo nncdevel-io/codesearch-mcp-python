@@ -21,7 +21,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](#-ライセンス)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
-[![MCP](https://img.shields.io/badge/MCP-compatible-blueviolet.svg)](https://spec.modelcontextprotocol.io/)
+[![MCP 2024-11-05 – 2026-07-28](https://img.shields.io/badge/MCP-2024--11--05_%E2%80%93_2026--07--28-blueviolet.svg)](https://modelcontextprotocol.io/specification/)
 
 ---
 
@@ -40,6 +40,8 @@ Model Context Protocol (MCP) サーバー。Claude Code・Claude Desktop・自�
 - ⏱️ **request path に blocking git pull なし** — 同期は CLI / スケジューラ
   経由で完全に分離 (p95 2s / 可用性要件を守る)
 - 🔌 **stdio と Streamable HTTP の両方** — どちらでも同じツールが使える
+- 📡 **MCP プロトコル 2024-11-05 〜 2026-07-28 に対応** — 対応版の一覧は
+  [`docs/spec/spec.md`](docs/spec/spec.md) §2.4
 
 ---
 
