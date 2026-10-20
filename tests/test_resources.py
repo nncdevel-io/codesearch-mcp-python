@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
 
 from codesearch_mcp.config.models import RepositoryConfig, Settings
 from codesearch_mcp.giturl import Hosting
@@ -51,8 +51,7 @@ def test_repo_uri_scheme() -> None:
 async def test_resources_list_advertises_all_configured_repos(tmp_path: Path) -> None:
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.list_resources()
         uris = {str(r.uri) for r in result.resources}
         assert uris == {repo_uri("alpha"), repo_uri("beta")}
@@ -64,12 +63,11 @@ async def test_resources_list_advertises_all_configured_repos(tmp_path: Path) ->
 async def test_resources_read_returns_repo_status_json(tmp_path: Path) -> None:
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         read_result = await client.read_resource(repo_uri("alpha"))
         assert len(read_result.contents) == 1
         block = read_result.contents[0]
-        assert block.mimeType == "application/json"
+        assert block.mime_type == "application/json"
         payload = json.loads(block.text)
         assert payload["id"] == "alpha"
         assert payload["branch"] == "main"
@@ -84,8 +82,7 @@ async def test_resources_read_returns_repo_status_json(tmp_path: Path) -> None:
 async def test_resources_read_reports_failed_state(tmp_path: Path) -> None:
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         read_result = await client.read_resource(repo_uri("beta"))
         payload = json.loads(read_result.contents[0].text)
         assert payload["branch"] == "develop"
@@ -102,8 +99,7 @@ async def test_resources_list_exposes_operator_description(tmp_path: Path) -> No
     selection without first calling resources/read."""
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         result = await client.list_resources()
         by_uri = {str(r.uri): r for r in result.resources}
         # alpha has a description → it must be in the Resource.description field.
@@ -115,10 +111,9 @@ async def test_resources_list_exposes_operator_description(tmp_path: Path) -> No
 async def test_list_repositories_tool_returns_description(tmp_path: Path) -> None:
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
+    async with Client(server, mode="legacy") as client:
         res = await client.call_tool("list_repositories", {})
-        payload = res.structuredContent or json.loads(res.content[0].text)
+        payload = res.structured_content or json.loads(res.content[0].text)
         by_id = {r["id"]: r for r in payload["repositories"]}
         assert by_id["alpha"]["description"] == "Frontend Vue.js shop app. Pages under src/views/."
         assert by_id["beta"]["description"] is None
@@ -126,14 +121,13 @@ async def test_list_repositories_tool_returns_description(tmp_path: Path) -> Non
 
 async def test_unknown_resource_uri_returns_mcp_error(tmp_path: Path) -> None:
     """Spec §4.6.5: unknown URIs surface as an MCP protocol-level error
-    (`McpError`), not as the tool-side `{code,message,details}` envelope."""
-    from mcp.shared.exceptions import McpError
+    (`MCPError`), not as the tool-side `{code,message,details}` envelope."""
+    from mcp import MCPError
 
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        await client.initialize()
-        with pytest.raises(McpError) as ei:
+    async with Client(server, mode="legacy") as client:
+        with pytest.raises(MCPError) as ei:
             await client.read_resource("codesearch://repo/does-not-exist")
         assert "Unknown resource" in str(ei.value)
 
@@ -141,11 +135,10 @@ async def test_unknown_resource_uri_returns_mcp_error(tmp_path: Path) -> None:
 async def test_capabilities_advertise_resources_and_tools(tmp_path: Path) -> None:
     settings, mgr = _settings(tmp_path)
     server = build_server(settings, mgr)
-    async with create_connected_server_and_client_session(server) as client:
-        init = await client.initialize()
-        assert init.capabilities.tools is not None
-        assert init.capabilities.resources is not None
-        # prompts は引き続き未公開ではないが、FastMCP の現実装ではハンドラ登録
-        # の都合で空オブジェクトが出る。spec 整合の観点では tools/resources
-        # が立っていれば本タスクの要件を満たす。
-        assert init.serverInfo.name == "codesearch-mcp"
+    async with Client(server, mode="legacy") as client:
+        capabilities = client.server_capabilities
+        assert capabilities.tools is not None
+        assert capabilities.resources is not None
+        assert capabilities.prompts is None
+        assert client.server_info is not None
+        assert client.server_info.name == "codesearch-mcp"
