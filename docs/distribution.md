@@ -88,31 +88,19 @@ PyPI 公開を後付けで足すことは可能だが、それを「補助的な
 判断に迷ったときは、**クライアント (= MCP ホスト + LLM) 視点で
 "対応コードに手を入れずに動くか"** で切る。動かないなら MAJOR。
 
-### 単一の真実: `src/codesearch_mcp/__init__.py`
+### バージョン値の置き場所
 
-バージョン値は `__version__` に 1 か所だけ書く。`MCPServer` の
-`serverInfo.version` (`initialize` 応答) と `pyproject.toml` の
-`project.version` は同じ値を保つ。
-
-`pyproject.toml` 側は **hatch の動的バージョン** を使い、`__init__.py`
-を読みに行く設定にしているため、二重管理は発生しない (将来の改善:
-現状は `pyproject.toml` の `version = "0.1.0"` がハードコードされて
-いるので、`[tool.hatch.version]` で `path = "src/codesearch_mcp/__init__.py"`
-を指す動的バージョンに切り替える)。
+`MCPServer` の `serverInfo.version`（`initialize` 応答）は
+`src/codesearch_mcp/__init__.py` の `__version__` を返す。
+`pyproject.toml` の `project.version` はハードコードしているため、
+両者を同じ値に保つ（将来の改善: `[tool.hatch.version]` で
+`path = "src/codesearch_mcp/__init__.py"` を指す動的バージョンに切り替えれば
+二重管理をなくせる）。
 
 ### 手順
 
-新リリースを切る運用フロー (人手):
-
-1. **変更を確認**
-   `git log --oneline v<前回のタグ>..HEAD` で差分を眺め、上の表で
-   MAJOR / MINOR / PATCH のどれかを決める。
-2. **`__init__.py` の `__version__` を更新**
-   例: `0.1.0` → `0.2.0`
-3. **`CHANGELOG.md` に新エントリを追加** (詳細は次節)
-4. **コミット** `chore: release v0.2.0`
-5. **タグを打つ** `git tag -a v0.2.0 -m "..."`
-6. **push** `git push && git push --tags`
+リリースの手順は [`release.md`](release.md) にまとめている。
+この文書では手順を重複して書かない。
 
 これ以降のコンテナ配布は外部運用 (今のところ GHA での自動 push は未採用、
 利用者が必要なら `docker build` をローカルで実行)。

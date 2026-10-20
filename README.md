@@ -16,7 +16,7 @@
 > 引用は Git URL (行アンカー付き) で即貼り付け。
 
 [![verify](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml/badge.svg)](https://github.com/nncdevel-io/codesearch-mcp-python/actions/workflows/verify.yml)
-[![version](https://img.shields.io/badge/version-v0.2.0-blue.svg)](pyproject.toml)
+[![version](https://img.shields.io/badge/version-v0.3.0-blue.svg)](pyproject.toml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](#-ライセンス)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -50,7 +50,7 @@ Model Context Protocol (MCP) サーバー。Claude Code・Claude Desktop・自�
 | 🔧 ツール | 何ができる | 主な入力 | 主な出力 |
 | --- | --- | --- | --- |
 | 🔍 `search_code` | ファイル内容の正規表現検索 | `pattern`, `repository`, `glob`/`type`, `output_mode` | ヒット行 + Git URL (行アンカー) |
-| 📄 `list_files` | グロブによるファイル名検索 | `pattern`, `repository` | パス + 最終更新時刻 + Git URL |
+| 📄 `list_files` | glob によるファイル名検索 | `pattern`, `repository` | パス + 最終更新時刻 + Git URL |
 | 🌳 `list_tree` | ディレクトリ階層の俯瞰 | `repository`, `max_depth`, `max_entries` | ASCII ツリー |
 | 📖 `read_file` | 行範囲指定でファイル内容を読む | `repository`, `file_path`, `start_line`, `num_lines` | 行番号付き内容 + Git URL |
 | 🗂️ `list_repositories` | 設定済みリポジトリのカタログ (LLM 向け discovery) | — | id / branch / hosting / status の配列 |
@@ -244,7 +244,7 @@ uv run python scripts/probe.py --url http://127.0.0.1:8000/mcp/ \
 | 🚫 `REPO_NOT_FOUND` | 指定リポジトリが設定にない |
 | ⏳ `REPO_NOT_READY` | 初回 clone が未完了 (時間をおいて再試行) |
 | 🛡️ `INVALID_PATH` | パストラバーサルや絶対パスを検出 |
-| ❌ `INVALID_PATTERN` | 検索 / グロブパターン不正 |
+| ❌ `INVALID_PATTERN` | 検索 / glob パターン不正 |
 | 📦 `FILE_TOO_LARGE` / `FILE_BINARY` | `read_file` の対象が読み取れない |
 | ⏱️ `TIMEOUT` | サーバ側タイムアウト超過 |
 

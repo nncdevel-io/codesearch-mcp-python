@@ -133,7 +133,7 @@ URL 生成規則は 6 章を参照。
     "glob": {
       "type": "string",
       "maxLength": 256,
-      "description": "ファイル名のグロブパターン"
+      "description": "ファイル名の glob パターン"
     },
     "type": {
       "type": "string",
@@ -316,7 +316,7 @@ URL 生成規則は 6 章を参照。
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "description": "グロブパターン (例: **/*.java)"
+      "description": "glob パターン (例: **/*.java)"
     },
     "path": { "$ref": "#/$defs/relativePath" },
     "max_results": {
@@ -703,7 +703,7 @@ MCP プロトコルに従い、エラーは tool result の `isError: true`
 | `REPO_NOT_READY` | リポジトリの初回 clone が未完了 | 全ツール | 可 (時間をおいて再試行) |
 | `INVALID_PATH` | パストラバーサルや絶対パスを検出 | path/file_path を取る全ツール | 不可 (入力修正が必要) |
 | `PATH_NOT_FOUND` | 指定パスがリポジトリ内に存在しない | path/file_path を取る全ツール | 不可 |
-| `INVALID_PATTERN` | 検索/グロブパターンが不正 | search_code、list_files | 不可 |
+| `INVALID_PATTERN` | 検索/glob パターンが不正 | search_code、list_files | 不可 |
 | `FILE_TOO_LARGE` | ファイルサイズが上限超過 | read_file | 不可 (範囲指定では回避不能) |
 | `FILE_BINARY` | テキストとして解釈できない | read_file | 不可 |
 | `TIMEOUT` | ツール処理が制限時間を超過 | 全ツール | 可 (再試行・条件絞り込み) |

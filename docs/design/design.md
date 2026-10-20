@@ -60,7 +60,7 @@ clone/fetch/reset・readiness 状態管理・障害分離 (個別リポジトリ
 | `backends/ripgrep.py` | `rg` argv 構築と `--json` 出力パース (search_code / list_files) |
 | `backends/git_ls.py` | `git ls-files` 実行 |
 | `tools/search_code.py` | content / files_with_matches / count の組立、max_results 丸め、truncated |
-| `tools/list_files.py` | グロブ列挙、`last_modified` 降順 |
+| `tools/list_files.py` | glob による列挙、`last_modified` 降順 |
 | `tools/list_tree.py` | git ls-files からツリー整形 (max_depth / max_entries / show_files、Unicode 罫線、コードポイント順) |
 | `tools/read_file.py` | 純 Python 範囲読み取り、サイズ (>10MB→`FILE_TOO_LARGE`)・バイナリ (`FILE_BINARY`) 判定、行番号タブ整形 |
 | `pathsafe.py` | 相対パス検証 (絶対 / `..` 拒否、realpath 封じ込め) → `INVALID_PATH` / `PATH_NOT_FOUND` |

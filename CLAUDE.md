@@ -32,6 +32,14 @@ spec → design → plan is a strict hierarchy; do not contradict an upstream do
   playbooks and is the wrong artifact here).
 - Detailed design and implementation code are decided per task at
   implementation time (TDD), never written into the plan.
+- Completed milestone plans are archived as
+  `docs/tasks/done/task.<milestone>.md` (e.g. `task.m2.md`); a new
+  `docs/tasks/task.md` is started for the next milestone.
+- **Releases follow `docs/release.md`.** Bump the version in all places it
+  lists, merge, then push a `vX.Y.Z` tag; the `release` workflow creates the
+  GitHub Release and attaches sdist/wheel. Never create the Release in the
+  GitHub UI first — the workflow then fails with "release already exists".
+  When bumping a version or preparing a release, remind the user of this.
 - **Commit attribution: never add Claude credit to the git history.** Do not
   append `Co-Authored-By: Claude ...`, "🤖 Generated with Claude Code", or any
   tool/AI attribution to commit messages or PR bodies. The author and
