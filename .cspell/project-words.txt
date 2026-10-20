@@ -37,3 +37,7 @@ pyjwt
 jlowin
 ASGI
 Starlette
+sdist
+camo
+grimp
+rustc

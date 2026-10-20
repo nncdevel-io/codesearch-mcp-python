@@ -5,7 +5,7 @@ The strings the LLM uses to decide *whether* and *which* tool to call live in
 
 1. The constants in ``llm_guidance.py`` themselves contain certain key phrases
    (so we cannot silently drop e.g. the "list_tree FIRST" advice).
-2. The FastMCP server actually advertises those constants via the MCP
+2. The MCPServer server actually advertises those constants via the MCP
    ``initialize`` and ``tools/list`` responses (regression against accidental
    reverts to the old one-line descriptions).
 3. ``docs/usage-for-llm.md`` mirrors the same constants (catches doc drift).
@@ -104,16 +104,16 @@ def test_tool_description_carries_key_phrases(
         assert token in text, f"{name} description must mention {token!r}"
 
 
-# ---- (2) FastMCP actually advertises those constants ----------------------
+# ---- (2) MCPServer actually advertises those constants ----------------------
 
 
-def test_fastmcp_publishes_server_instructions() -> None:
+def test_mcpserver_publishes_server_instructions() -> None:
     server = _build_minimal_server()
-    # FastMCP stores instructions on the underlying low-level server.
+    # MCPServer stores instructions on the underlying low-level server.
     assert server.instructions == SERVER_INSTRUCTIONS
 
 
-def test_fastmcp_publishes_full_tool_descriptions() -> None:
+def test_mcpserver_publishes_full_tool_descriptions() -> None:
     server = _build_minimal_server()
     by_name = {t.name: t for t in server._tool_manager.list_tools()}
     assert by_name["search_code"].description == SEARCH_CODE_DESCRIPTION
